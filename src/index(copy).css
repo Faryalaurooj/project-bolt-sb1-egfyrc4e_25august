@@ -1,0 +1,181 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* CSS Variables for dynamic font sizing */
+:root {
+  --base-font-size: 16px;
+}
+
+html {
+  font-size: var(--base-font-size);
+}
+
+/* Base background with soft radial gradients */
+@layer base {
+  body {
+    @apply bg-gradient-to-br from-lime-100 via-white to-green-100 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 min-h-screen;
+    background-image:
+      radial-gradient(circle at 30% 30%, rgba(255,255,255,0.4) 0%, transparent 70%),
+      radial-gradient(circle at 70% 70%, rgba(255,255,255,0.3) 0%, transparent 80%);
+  }
+  
+  body.dark {
+    background-image:
+      radial-gradient(circle at 30% 30%, rgba(0,0,0,0.4) 0%, transparent 70%),
+      radial-gradient(circle at 70% 70%, rgba(0,0,0,0.3) 0%, transparent 80%);
+  }
+}
+
+/* Custom animations */
+@keyframes floatSm {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+.animate-float-sm {
+  animation: floatSm 6s ease-in-out infinite;
+}
+
+@keyframes subtleFloat {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+.animate-subtle-float {
+  animation: subtleFloat 5s ease-in-out infinite;
+}
+
+@keyframes pingSlow {
+  0% {
+    transform: scale(1);
+    opacity: 0.3;
+  }
+  100% {
+    transform: scale(1.3);
+    opacity: 0;
+  }
+}
+.animate-ping-slow {
+  animation: pingSlow 8s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* Interactive Button Hover Effects */
+.btn-interactive-hover {
+  @apply bg-white text-gray-900 shadow-md border border-gray-200 
+         hover:bg-mintyLemonGreen hover:-translate-y-1 hover:scale-105 hover:shadow-lg
+         transition-all duration-300 ease-in-out transform;
+}
+
+.btn-interactive-hover-primary {
+  @apply bg-blue-600 text-white shadow-md border border-blue-600
+         hover:bg-mintyLemonGreen hover:text-gray-900 hover:border-mintyLemonGreen
+         hover:-translate-y-1 hover:scale-105 hover:shadow-lg
+         transition-all duration-300 ease-in-out transform;
+}
+
+.btn-interactive-hover-secondary {
+  @apply bg-gray-100 text-gray-700 shadow-md border border-gray-300
+         hover:bg-mintyLemonGreen hover:text-gray-900 hover:border-mintyLemonGreen
+         hover:-translate-y-1 hover:scale-105 hover:shadow-lg
+         transition-all duration-300 ease-in-out transform;
+}
+
+/* Card Hover Effects */
+.card-interactive-hover {
+  @apply transition-all duration-300 ease-in-out transform
+         hover:scale-105 hover:shadow-xl hover:bg-gradient-to-br hover:from-white hover:to-mintyLemonGreen-50;
+}
+
+/* Input Focus Effects */
+.input-interactive-focus {
+  @apply transition-all duration-200 ease-in-out
+         focus:ring-2 focus:ring-mintyLemonGreen focus:border-mintyLemonGreen
+         focus:scale-105;
+}
+
+/* Cute Calendar Styles */
+.cute-calendar {
+  @apply w-full bg-gradient-to-br from-purple-50 to-pink-50 dark:bg-gradient-to-br dark:from-gray-800 dark:to-gray-700 rounded-2xl shadow-xl border-2 border-purple-200 dark:border-gray-600 overflow-hidden;
+}
+
+.cute-calendar .react-calendar__navigation {
+  @apply bg-gradient-to-r from-purple-600 to-pink-600 p-4 shadow-lg;
+}
+
+.cute-calendar .react-calendar__navigation button {
+  @apply text-white font-bold text-lg hover:bg-white hover:bg-opacity-30 rounded-xl transition-all duration-200 p-3 shadow-md hover:shadow-lg transform hover:scale-105;
+}
+
+.cute-calendar .react-calendar__navigation button:enabled:hover,
+.cute-calendar .react-calendar__navigation button:enabled:focus {
+  @apply bg-white bg-opacity-30 transform scale-110 shadow-xl;
+}
+
+.cute-calendar .react-calendar__navigation__label {
+  @apply text-white font-bold text-xl drop-shadow-lg;
+}
+
+.cute-calendar .react-calendar__month-view__weekdays {
+  @apply bg-gradient-to-r from-purple-200 to-pink-200 dark:from-gray-700 dark:to-gray-600 shadow-inner;
+}
+
+.cute-calendar .react-calendar__month-view__weekdays__weekday {
+  @apply text-purple-800 dark:text-purple-300 font-bold text-sm p-3 text-center drop-shadow-sm;
+}
+
+.cute-calendar .react-calendar__month-view__days {
+  @apply bg-gradient-to-br from-white to-purple-25 dark:bg-gradient-to-br dark:from-gray-800 dark:to-gray-750;
+}
+
+.cute-calendar .react-calendar__tile {
+  @apply p-2 text-center border border-purple-100 dark:border-gray-700 hover:bg-gradient-to-br hover:from-purple-100 hover:to-pink-100 dark:hover:from-gray-600 dark:hover:to-gray-500 transition-all duration-300 cursor-pointer relative min-h-[70px] flex flex-col justify-start shadow-sm hover:shadow-md;
+}
+
+.cute-calendar .react-calendar__tile:enabled:hover,
+.cute-calendar .react-calendar__tile:enabled:focus {
+  @apply bg-gradient-to-br from-purple-200 to-pink-200 dark:from-gray-600 dark:to-gray-500 transform scale-105 shadow-lg rounded-lg border-2 border-purple-300 dark:border-gray-500;
+}
+
+.cute-calendar .react-calendar__tile--now {
+  @apply bg-gradient-to-br from-yellow-200 to-orange-200 dark:from-yellow-900 dark:to-orange-900 text-yellow-900 dark:text-yellow-200 font-bold border-3 border-yellow-400 dark:border-yellow-600 rounded-lg shadow-lg ring-2 ring-yellow-300 dark:ring-yellow-700;
+}
+
+.cute-calendar .react-calendar__tile--active {
+  @apply bg-gradient-to-br from-purple-300 to-pink-300 dark:from-purple-800 dark:to-pink-800 text-purple-900 dark:text-purple-200 font-bold border-3 border-purple-500 dark:border-purple-400 rounded-lg shadow-xl ring-2 ring-purple-400 dark:ring-purple-600;
+}
+
+.cute-calendar .react-calendar__tile--neighboringMonth {
+  @apply text-gray-400 dark:text-gray-600 bg-gray-100 dark:bg-gray-900 opacity-50;
+}
+
+.cute-calendar .react-calendar__tile abbr {
+  @apply font-bold text-gray-800 dark:text-gray-300 text-base;
+}
+
+.cute-calendar .react-calendar__tile--now abbr {
+  @apply text-yellow-900 dark:text-yellow-200 drop-shadow-sm;
+}
+
+.cute-calendar .react-calendar__tile--active abbr {
+  @apply text-purple-900 dark:text-purple-200 drop-shadow-sm;
+}
+
+/* Event indicators within calendar tiles */
+.cute-calendar .react-calendar__tile {
+  position: relative;
+}
+
+.cute-calendar .react-calendar__tile .event-indicators {
+  @apply absolute bottom-1 left-1 right-1 flex justify-center gap-1;
+}
+
+.cute-calendar .react-calendar__tile .event-dot {
+  @apply w-2 h-2 rounded-full border border-white shadow-sm;
+}

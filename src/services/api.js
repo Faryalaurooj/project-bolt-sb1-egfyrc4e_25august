@@ -271,6 +271,7 @@ export const getContacts = async () => {
       .from('contacts')
       .select('*, do_not_contact')
       .order('created_at', { ascending: false });
+      console.log("data___",data)
 
     if (error) {
       console.error('📞 getContacts: Supabase error:', error);
@@ -983,14 +984,14 @@ export const getUsers = async () => {
     
     // Get JWT token for backend authentication
     const jwtToken = await getJwtToken();
-    if (!jwtToken) {
-      console.error('👥 getUsers: No JWT token available');
-      throw new Error('No authentication token available');
-    }
+    // if (!jwtToken) {
+    //   console.error('👥 getUsers: No JWT token available');
+    //   throw new Error('No authentication token available');
+    // }
     
     console.log('👥 getUsers: Making API request to /api/users with JWT token...');
     // Fetch users from backend API
-    const response = await fetch('/api/users', {
+    const response = await fetch('/api/users/', {
       headers: {
         'Authorization': `Bearer ${jwtToken}`,
         'Content-Type': 'application/json'
@@ -1023,6 +1024,7 @@ export const searchContactsAndUsers = async (searchTerm = '') => {
     // Fetch contacts
     console.log('🔍 searchContactsAndUsers: Fetching contacts...');
     const contacts = await getContacts();
+    
     console.log('🔍 searchContactsAndUsers: Contacts fetched:', contacts?.length || 0);
     
     // Fetch users
@@ -1192,42 +1194,42 @@ export const getPoliciesByContactId = async (contactId) => {
 };
 
 // Text Messages API
-export const createTextMessage = async (messageData, mediaFile = null) => {
+export const createTextMessage = async (messageData) => {
   try {
-    console.log('📱 createTextMessage: Starting with data:', messageData);
+    // console.log('📱 createTextMessage: Starting with data:', messageData);
     
     const { data: { user }, error: userError } = await supabase.auth.getUser();
       
-    if (userError) throw userError;
-    if (!user) throw new Error('No authenticated user found');
+    // if (userError) throw userError;
+    // if (!user) throw new Error('No authenticated user found');
 
-    let media_url = messageData.media_url;
+    // let media_url = messageData.media_url;
     
     // Upload file if provided
-    if (mediaFile) {
-      console.log('📱 createTextMessage: Uploading media file...');
-      const fileExt = mediaFile.name.split('.').pop();
-      const fileName = `${Date.now()}.${fileExt}`;
+    // if (mediaFile) {
+    //   console.log('📱 createTextMessage: Uploading media file...');
+    //   const fileExt = mediaFile.name.split('.').pop();
+    //   const fileName = `${Date.now()}.${fileExt}`;
       
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('message-attachments')
-        .upload(fileName, mediaFile);
+    //   const { data: uploadData, error: uploadError } = await supabase.storage
+    //     .from('message-attachments')
+    //     .upload(fileName, mediaFile);
       
-      if (uploadError) throw uploadError;
+    //   if (uploadError) throw uploadError;
       
-      const { data: { publicUrl } } = supabase.storage
-        .from('message-attachments')
-        .getPublicUrl(fileName);
+    //   const { data: { publicUrl } } = supabase.storage
+    //     .from('message-attachments')
+    //     .getPublicUrl(fileName);
       
-      media_url = publicUrl;
-      console.log('📱 createTextMessage: Media uploaded:', media_url);
-    }
+    //   media_url = publicUrl;
+    //   console.log('📱 createTextMessage: Media uploaded:', media_url);
+    // }
 
     // If this is an outgoing message, send via TextMagic API
     let textmagic_id = null;
     let finalStatus = messageData.status || 'pending';
     
-    if (messageData.direction === 'outgoing' && messageData.recipient_phone) {
+    if ( messageData.recipient_phone) {
       try {
         console.log('📱 createTextMessage: Sending via TextMagic API...');
         const { data: session } = await supabase.auth.getSession();
@@ -1241,8 +1243,7 @@ export const createTextMessage = async (messageData, mediaFile = null) => {
           body: JSON.stringify({
             to: messageData.recipient_phone,
             message: messageData.content,
-            contact_id: messageData.contact_id,
-            recipient_id: messageData.recipient_id
+           
           })
         });
         
@@ -1275,7 +1276,6 @@ export const createTextMessage = async (messageData, mediaFile = null) => {
         direction: messageData.direction || 'outgoing',
         status: finalStatus,
         sent_at: messageData.sent_at || new Date().toISOString(),
-        media_url,
         textmagic_id
       }])
       .select('*')

@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Backend for CRM application",
   "main": "server.js",
+  "type": "module",
   "scripts": {
     "start": "node server.js",
     "dev": "npx nodemon server.js",

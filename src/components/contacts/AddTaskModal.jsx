@@ -218,7 +218,10 @@ function AddTaskModal({ isOpen, onClose, contact, onTaskSaved, initialDate }) {
                       </div>
                     </div>
                     <button
-                      onClick={() => setSelectedContact(null)}
+                      onClick={(e) =>{
+                        e.preventDefault();
+                        setSelectedContact(null)
+                      } }
                       className="text-red-500 hover:text-red-700 p-1 rounded-full hover:bg-red-100 transition-colors"
                     >
                       <FiX className="w-3 h-3" />
@@ -226,7 +229,13 @@ function AddTaskModal({ isOpen, onClose, contact, onTaskSaved, initialDate }) {
                   </div>
                 ) : (
                   <button
-                    onClick={() => setIsContactSelectOpen(true)}
+                    onClick={(
+                      e
+
+                    ) =>{
+                      e.preventDefault();
+                      setIsContactSelectOpen(true);
+                    } }
                     className="w-full flex items-center justify-center px-4 py-3 border-2 border-dashed border-blue-300 rounded-lg text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-all duration-200"
                   >
                     <FiUser className="mr-2" />

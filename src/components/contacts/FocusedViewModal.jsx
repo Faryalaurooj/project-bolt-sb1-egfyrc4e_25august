@@ -260,7 +260,11 @@ function FocusedViewModal({ isOpen, onClose, contact, onNoteSaved, onActionItemS
                 </div>
                 <div className="flex items-center space-x-3">
                   <button
-                    onClick={() => setIsScheduleMeetingOpen(true)}
+                    onClick={() =>{
+                      setIsScheduleMeetingOpen(true)
+                      onClose()
+
+                    } }
                     className="px-6 py-3 bg-white bg-opacity-20 text-white font-semibold rounded-lg hover:bg-opacity-30 transition-all duration-200 transform hover:scale-105 flex items-center"
                   >
                     <FiCalendar className="mr-2" />

@@ -776,8 +776,17 @@ export const getMSALInstance = async () => {
 
 // Acquire token for a specific user (by email)
 const getAccessTokenForUser = async (userEmail, scopes = loginRequest.scopes) => {
+  console.log(`🔑 Getting access token for user: ${userEmail}`);
+  console.log(`🔑 Required scopes:`, scopes);
+  
   let msalInstance = await getMSALInstance();
   let accounts = msalInstance.getAllAccounts();
+
+  console.log(`👥 Available accounts:`, accounts.map(acc => ({
+    username: acc.username,
+    name: acc.name,
+    localAccountId: acc.localAccountId
+  })));
 
   // Find account matching user email
   let account = accounts.find(
@@ -785,19 +794,42 @@ const getAccessTokenForUser = async (userEmail, scopes = loginRequest.scopes) =>
   );
 
   if (!account) {
-          console.log('No existing account found, initiating login popup');
+    console.log('🔐 No existing account found, initiating login popup');
+    try {
       const loginResponse = await msalInstance.loginPopup(loginRequest);
       account = loginResponse.account;
-      console.log('Login successful, account:', loginResponse);
+      console.log('✅ Login successful, account:', {
+        username: loginResponse.account.username,
+        name: loginResponse.account.name,
+        localAccountId: loginResponse.account.localAccountId
+      });
+    } catch (loginError) {
+      console.error('❌ Login popup failed:', loginError);
+      throw new Error(`Login failed: ${loginError.message}`);
+    }
+  } else {
+    console.log('✅ Using existing account:', {
+      username: account.username,
+      name: account.name,
+      localAccountId: account.localAccountId
+    });
   }
 
   try {
+    console.log('🔑 Attempting silent token acquisition...');
     const response = await msalInstance.acquireTokenSilent({ scopes, account });
+    console.log('✅ Silent token acquisition successful');
     return response.accessToken;
   } catch (error) {
-    console.warn("Silent token acquisition failed, trying popup:", error);
-    const response = await msalInstance.acquireTokenPopup({ scopes, account });
-    return response.accessToken;
+    console.warn("⚠️ Silent token acquisition failed, trying popup:", error);
+    try {
+      const response = await msalInstance.acquireTokenPopup({ scopes, account });
+      console.log('✅ Token acquired via popup');
+      return response.accessToken;
+    } catch (popupError) {
+      console.error('❌ Popup token acquisition failed:', popupError);
+      throw new Error(`Token acquisition failed: ${popupError.message}`);
+    }
   }
 };
 
@@ -842,68 +874,242 @@ export const initializeOutlookSync = async (userEmail) => {
 // Fetch Calendar Events
 export const getOutlookCalendarEvents = async (userEmail, startDate, endDate) => {
   try {
+    console.log(`🔍 Starting Outlook events fetch for ${userEmail}`);
+    console.log(`📅 Date range: ${startDate.toISOString()} to ${endDate.toISOString()}`);
+    
+    // Validate inputs
+    if (!userEmail) {
+      throw new Error('User email is required');
+    }
+    
+    if (!startDate || !endDate) {
+      throw new Error('Start and end dates are required');
+    }
+    
+    console.log(`🔑 Getting Graph client for ${userEmail}...`);
     const client = await getGraphClientForUser(userEmail, [
       "Calendars.Read",
       "Calendars.ReadWrite",
     ]);
+    console.log(`✅ Graph client obtained successfully`);
+    
     const start = startDate.toISOString();
     const end = endDate.toISOString();
 
-    const events = await client
-      .api("/me/calendarview")
-      .query({
-        startDateTime: start,
-        endDateTime: end,
-        $select: "id,subject,start,end,location,bodyPreview,isAllDay",
-        $orderby: "start/dateTime",
-      })
-      .get();
+    console.log(`📅 Fetching Outlook events for ${userEmail} from ${start} to ${end}`);
 
-    return events.value.map((event) => ({
-      id: `outlook-${event.id}`,
-      event_text: event.subject || "Outlook Event",
-      event_date: event.start.dateTime.split("T")[0],
-      color: "#0078D4",
-      user_id: userEmail,
-      source: "outlook",
-      location: event.location?.displayName,
-      bodyPreview: event.bodyPreview,
-      isAllDay: event.isAllDay,
-      startTime: event.start.dateTime,
-      endTime: event.end.dateTime,
-    }));
+    // Try to fetch events with more detailed error handling
+    let events;
+    try {
+      events = await client
+        .api("/me/calendarview")
+        .query({
+          startDateTime: start,
+          endDateTime: end,
+          $select: "id,subject,start,end,location,bodyPreview,isAllDay,body",
+          $orderby: "start/dateTime",
+        })
+        .get();
+      
+      console.log(`📊 Raw API response:`, events);
+    } catch (apiError) {
+      console.error(`❌ Microsoft Graph API error:`, apiError);
+      console.error(`❌ Error details:`, {
+        message: apiError.message,
+        code: apiError.code,
+        statusCode: apiError.statusCode,
+        body: apiError.body
+      });
+      throw apiError;
+    }
+
+    if (!events || !events.value) {
+      console.warn(`⚠️ No events data in response:`, events);
+      return [];
+    }
+
+    console.log(`✅ Found ${events.value.length} Outlook events`);
+
+    const mappedEvents = events.value.map((event) => {
+      console.log(`📝 Processing event:`, event);
+      return {
+        id: `outlook-${event.id}`,
+        event_text: event.subject || "Outlook Event",
+        event_date: event.start?.dateTime ? event.start.dateTime.split("T")[0] : new Date().toISOString().split("T")[0],
+        color: "#0078D4", // Microsoft blue
+        user_id: userEmail,
+        source: "outlook",
+        location: event.location?.displayName,
+        bodyPreview: event.bodyPreview,
+        body: event.body?.content,
+        isAllDay: event.isAllDay,
+        startTime: event.start?.dateTime,
+        endTime: event.end?.dateTime,
+        isOutlookEvent: true, // Flag to identify Outlook events
+      };
+    });
+
+    console.log(`🎯 Final mapped events:`, mappedEvents);
+    return mappedEvents;
   } catch (error) {
-    console.error(`Error fetching events for ${userEmail}:`, error);
-    return [];
+    console.error(`❌ Error fetching events for ${userEmail}:`, error);
+    console.error(`❌ Error stack:`, error.stack);
+    throw error; // Re-throw to let caller handle it
   }
 };
 
-// Sync Task
-export const syncTaskWithOutlook = async (userEmail, task) => {
+// Sync Event to Outlook Calendar
+export const syncEventWithOutlook = async (userEmail, eventData) => {
   try {
+    console.log(`📅 Starting calendar event creation for ${userEmail}`);
+    console.log(`📅 Event data received:`, eventData);
+    
     const client = await getGraphClientForUser(userEmail, ["Calendars.ReadWrite"]);
-    const event = {
-      subject: task.title,
+    console.log(`✅ Graph client obtained for calendar operations`);
+    
+    // Parse the event date properly
+    const eventDate = new Date(eventData.dueDate || eventData.eventDate);
+    console.log(`📅 Parsed event date:`, eventDate);
+    console.log(`📅 Event date string:`, eventData.dueDate || eventData.eventDate);
+    
+    // Validate the date
+    if (isNaN(eventDate.getTime())) {
+      throw new Error(`Invalid date format: ${eventData.dueDate || eventData.eventDate}`);
+    }
+    
+    // Set event to be 1 hour long by default, or use provided duration
+    const startTime = eventDate;
+    const endTime = new Date(startTime.getTime() + (eventData.duration || 60) * 60 * 1000);
+    
+    console.log(`📅 Event timing:`, {
+      startTime: startTime.toISOString(),
+      endTime: endTime.toISOString(),
+      duration: eventData.duration || 60,
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+    });
+    
+    // Create event data for Outlook
+    const outlookEvent = {
+      subject: eventData.title || eventData.eventText,
       start: {
-        dateTime: new Date(task.dueDate).toISOString(),
+        dateTime: startTime.toISOString(),
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       },
       end: {
-        dateTime: new Date(
-          new Date(task.dueDate).getTime() + 60 * 60 * 1000
-        ).toISOString(),
+        dateTime: endTime.toISOString(),
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       },
       body: {
-        contentType: "text",
-        content: `Task: ${task.title}\nDescription: ${
-          task.description || ""
-        }\nPriority: ${task.priority || "Normal"}`,
+        contentType: "HTML",
+        content: `
+          <div style="font-family: Arial, sans-serif;">
+            <h3 style="color: #0078D4;">${eventData.title || eventData.eventText}</h3>
+            ${eventData.description ? `<p><strong>Description:</strong> ${eventData.description}</p>` : ''}
+            ${eventData.location ? `<p><strong>Location:</strong> ${eventData.location}</p>` : ''}
+            ${eventData.priority ? `<p><strong>Priority:</strong> ${eventData.priority}</p>` : ''}
+            <hr style="border: 1px solid #e1e1e1; margin: 10px 0;">
+            <p style="color: #666; font-size: 12px;"><em>Created via CRM System</em></p>
+          </div>
+        `,
       },
+      categories: ["CRM Event"], // Tag events from CRM
+      isReminderOn: true,
+      reminderMinutesBeforeStart: eventData.reminderMinutes || 15,
+      showAs: eventData.showAs || "busy",
+      importance: eventData.priority === "High" ? "high" : eventData.priority === "Low" ? "low" : "normal"
     };
-    return await client.api("/me/events").post(event);
+    
+    console.log(`📅 Creating Outlook calendar event for ${userEmail}:`, outlookEvent);
+    console.log(`📅 Event structure:`, {
+      subject: outlookEvent.subject,
+      startDateTime: outlookEvent.start.dateTime,
+      endDateTime: outlookEvent.end.dateTime,
+      timeZone: outlookEvent.start.timeZone,
+      hasLocation: !!eventData.location,
+      hasDescription: !!eventData.description
+    });
+    
+    const result = await client.api("/me/events").post(outlookEvent);
+    console.log(`✅ Event created successfully in Outlook calendar:`, result);
+    console.log(`✅ Event details:`, {
+      id: result.id,
+      subject: result.subject,
+      start: result.start,
+      end: result.end,
+      webLink: result.webLink
+    });
+    
+    return {
+      success: true,
+      outlookEventId: result.id,
+      webLink: result.webLink,
+      event: result
+    };
   } catch (error) {
-    console.error(`Error syncing task for ${userEmail}:`, error);
+    console.error(`❌ Error creating Outlook calendar event for ${userEmail}:`, error);
+    console.error(`❌ Error details:`, {
+      message: error.message,
+      code: error.code,
+      statusCode: error.statusCode,
+      body: error.body,
+      stack: error.stack
+    });
+    
+    // Enhanced error handling for calendar events
+    let errorMessage = error.message;
+    
+    if (error.statusCode === 401) {
+      errorMessage = `Authentication failed for calendar access. Please ensure you're logged in to your Outlook account (${userEmail}) and have granted Calendars.ReadWrite permission.`;
+    } else if (error.statusCode === 403) {
+      if (error.message.includes('admin consent') || error.message.includes('admin approval') || error.message.includes('unverified')) {
+        errorMessage = `Admin approval required. Your IT administrator needs to grant "Calendars.ReadWrite" permission to this app. Please contact your administrator to visit the Azure Portal and grant admin consent for app ID: d49cebd1-a756-42c9-8d25-a8870739850a`;
+      } else {
+        errorMessage = `Permission denied. The application doesn't have Calendars.ReadWrite permission for your Outlook account. Please contact your administrator.`;
+      }
+    } else if (error.statusCode === 400) {
+      if (error.message.includes('invalid') && error.message.includes('date')) {
+        errorMessage = `Invalid date format. Please check the meeting date and time.`;
+      } else if (error.message.includes('invalid') && error.message.includes('time')) {
+        errorMessage = `Invalid time format. Please check the meeting time.`;
+      } else {
+        errorMessage = `Bad request. Please check the meeting details and try again.`;
+      }
+    } else if (error.statusCode === 429) {
+      errorMessage = `Rate limit exceeded. Please wait a moment and try again.`;
+    } else if (error.statusCode >= 500) {
+      errorMessage = `Microsoft Graph API server error. Please try again later.`;
+    }
+    
+    throw new Error(`Failed to sync event to Outlook: ${errorMessage}`);
+  }
+};
+
+// Legacy function for backward compatibility
+export const syncTaskWithOutlook = async (userEmail, task) => {
+  return await syncEventWithOutlook(userEmail, {
+    title: task.title,
+    dueDate: task.dueDate,
+    description: task.description,
+    priority: task.priority,
+    duration: 60 // 1 hour default
+  });
+};
+
+// Delete Event from Outlook
+export const deleteOutlookEvent = async (userEmail, eventId) => {
+  try {
+    const client = await getGraphClientForUser(userEmail, ["Calendars.ReadWrite"]);
+    
+    // Remove the 'outlook-' prefix if it exists
+    const cleanEventId = eventId.replace('outlook-', '');
+    
+    console.log(`Deleting Outlook event ${cleanEventId} for ${userEmail}`);
+    await client.api(`/me/events/${cleanEventId}`).delete();
+    
+    console.log(`Event deleted successfully from Outlook`);
+    return { success: true, message: 'Event deleted from Outlook' };
+  } catch (error) {
+    console.error(`Error deleting Outlook event for ${userEmail}:`, error);
     throw error;
   }
 };
@@ -998,10 +1204,21 @@ export const sendOutlookEmail = async (
     subject,
     body,
     isHtml = true,
+    attachments = [],
   }
 ) => {
   try {
+    console.log(`📧 Starting email send process for ${userEmail}`);
+    console.log(`📬 Email details:`, {
+      from: userEmail,
+      to: to,
+      subject: subject,
+      bodyLength: body?.length || 0,
+      isHtml: isHtml
+    });
+
     const client = await getGraphClientForUser(userEmail, ["Mail.Send"]);
+    console.log(`✅ Graph client obtained for ${userEmail}`);
 
     // Helper to normalize recipients
     const normalizeRecipients = (recipients) => {
@@ -1011,6 +1228,36 @@ export const sendOutlookEmail = async (
       }
       return [{ emailAddress: { address: recipients } }];
     };
+
+    // Convert File objects to Graph fileAttachment format
+    const fileToBase64 = (file) =>
+      new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const result = reader.result || '';
+            const base64 = typeof result === 'string' ? result.split(',')[1] || result : '';
+            resolve({
+              '@odata.type': '#microsoft.graph.fileAttachment',
+              name: file.name,
+              contentType: file.type || 'application/octet-stream',
+              contentBytes: base64,
+            });
+          } catch (e) {
+            reject(e);
+          }
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+    let graphAttachments = [];
+    if (attachments && attachments.length > 0) {
+      const toConvert = attachments
+        .map((att) => att?.file || att)
+        .filter((f) => !!f && typeof File !== 'undefined' && f instanceof File);
+      graphAttachments = await Promise.all(toConvert.map((f) => fileToBase64(f)));
+    }
 
     const email = {
       message: {
@@ -1022,17 +1269,109 @@ export const sendOutlookEmail = async (
         toRecipients: normalizeRecipients(to),
         ccRecipients: normalizeRecipients(cc),
         bccRecipients: normalizeRecipients(bcc),
+        ...(graphAttachments.length > 0 ? { attachments: graphAttachments } : {}),
       },
       saveToSentItems: true,
     };
 
-   let res= await client.api("/me/sendMail").post(email);
-   console.log("send mail response",res)
+    console.log(`📤 Sending email via Microsoft Graph API...`);
+    console.log(`📧 Email structure:`, {
+      subject: email.message.subject,
+      toRecipients: email.message.toRecipients,
+      bodyType: email.message.body.contentType,
+      bodyLength: email.message.body.content.length,
+      hasAttachments: graphAttachments.length > 0
+    });
+
+    let res = await client.api("/me/sendMail").post(email);
+    console.log("✅ Send mail response:", res);
 
     return { success: true, message: `Email sent from ${userEmail}` };
   } catch (error) {
-    console.error(`Failed to send email as ${userEmail}:`, error);
-    throw new Error(`Failed to send email: ${error.message}`);
+    console.error(`❌ Failed to send email as ${userEmail}:`, error);
+    console.error(`❌ Error details:`, {
+      message: error.message,
+      code: error.code,
+      statusCode: error.statusCode,
+      body: error.body,
+      stack: error.stack
+    });
+    
+    // Enhanced error handling
+    let errorMessage = error.message;
+    
+    if (error.statusCode === 401) {
+      errorMessage = `Authentication failed. Please ensure you're logged in to your Outlook account (${userEmail}) and have granted the necessary permissions.`;
+    } else if (error.statusCode === 403) {
+      errorMessage = `Permission denied. The application doesn't have Mail.Send permission for your Outlook account. Please contact your administrator.`;
+    } else if (error.statusCode === 400) {
+      if (error.message.includes('invalid') && error.message.includes('email')) {
+        errorMessage = `Invalid email address format. Please check the recipient email addresses.`;
+      } else {
+        errorMessage = `Bad request. Please check the email content and recipient addresses.`;
+      }
+    } else if (error.statusCode === 429) {
+      errorMessage = `Rate limit exceeded. Please wait a moment and try again.`;
+    } else if (error.statusCode >= 500) {
+      errorMessage = `Microsoft Graph API server error. Please try again later.`;
+    }
+    
+    throw new Error(`Failed to send email: ${errorMessage}`);
+  }
+};
+
+// Sync All Outlook Events to Local Calendar
+export const syncOutlookEventsToLocal = async (userEmail, startDate, endDate, localEventCallback) => {
+  try {
+    console.log(`Syncing Outlook events to local calendar for ${userEmail}`);
+    
+    // Fetch Outlook events
+    const outlookEvents = await getOutlookCalendarEvents(userEmail, startDate, endDate);
+    
+    console.log(`Found ${outlookEvents.length} Outlook events to sync`);
+    
+    // Process each event through the callback (to save locally)
+    const syncedEvents = [];
+    for (const event of outlookEvents) {
+      try {
+        if (localEventCallback && typeof localEventCallback === 'function') {
+          const localEvent = await localEventCallback(event);
+          syncedEvents.push(localEvent);
+        } else {
+          syncedEvents.push(event);
+        }
+      } catch (error) {
+        console.warn(`Failed to sync individual event ${event.id}:`, error);
+      }
+    }
+    
+    return {
+      success: true,
+      syncedCount: syncedEvents.length,
+      events: syncedEvents
+    };
+  } catch (error) {
+    console.error(`Error syncing Outlook events to local for ${userEmail}:`, error);
+    throw error;
+  }
+};
+
+// Get User's Primary Calendar Info
+export const getOutlookCalendarInfo = async (userEmail) => {
+  try {
+    const client = await getGraphClientForUser(userEmail, ["Calendars.Read"]);
+    
+    const calendar = await client.api("/me/calendar").get();
+    
+    return {
+      id: calendar.id,
+      name: calendar.name,
+      color: calendar.color,
+      owner: calendar.owner
+    };
+  } catch (error) {
+    console.error(`Error fetching calendar info for ${userEmail}:`, error);
+    throw error;
   }
 };
 

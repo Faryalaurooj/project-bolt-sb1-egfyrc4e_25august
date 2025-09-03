@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Tab } from '@headlessui/react';
-import { FiPlus, FiSearch, FiEdit2, FiTrash2, FiUser, FiUsers, FiTag, FiStar, FiBell, FiX, FiMail, FiMessageSquare, FiMoreVertical, FiDownload, FiFilter } from 'react-icons/fi';
+import { FiPlus, FiSearch, FiEdit2, FiTrash2, FiUser, FiUsers, FiTag, FiStar, FiBell, FiX, FiMail, FiMessageSquare, FiMoreVertical, FiDownload, FiFilter, FiCalendar, FiHome, FiFileText, FiClock } from 'react-icons/fi';
 import BulkActionsBar from '../components/contacts/BulkActionsBar';
 import EmailCampaignModal from '../components/campaigns/EmailCampaignModal';
 import TextCampaignModal from '../components/campaigns/TextCampaignModal';
@@ -13,8 +13,11 @@ import ExportModal from '../components/contacts/ExportModal';
 import KeepInTouchModal from '../components/contacts/KeepInTouchModal';
 import NewContactModal from '../components/campaigns/NewContactModal';
 import NewCompanyModal from '../components/contacts/NewCompanyModal';
-import { getContacts, deleteContact } from '../services/api';
+import ScheduleMeetingModal from '../components/contacts/ScheduleMeetingModal';
+import EditContactModal from '../components/contacts/EditContactModal';
+import { getContacts, deleteContact, getUsers } from '../services/api';
 import { useToast } from '../hooks/useToast';
+import { useAuth } from '../context/AuthContext';
 
 function classNames(...classes) {
   return classes.filter(Boolean).join(' ');
@@ -27,6 +30,15 @@ function Contacts() {
   const [fetchError, setFetchError] = useState(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const { showSuccess, showError } = useToast();
+  const { user } = useAuth();
+  
+  // New state for enhanced contact features
+  const [isScheduleMeetingOpen, setIsScheduleMeetingOpen] = useState(false);
+  const [selectedContactForMeeting, setSelectedContactForMeeting] = useState(null);
+  const [isEditContactOpen, setIsEditContactOpen] = useState(false);
+  const [contactToEdit, setContactToEdit] = useState(null);
+  const [householdDetails, setHouseholdDetails] = useState({});
+  const [contactPolicies, setContactPolicies] = useState({});
 
   const [companies] = useState([
     { id: '1', name: '1212 Park Ave LLC', tags: [], domain: '' },
@@ -57,7 +69,7 @@ function Contacts() {
   const [focusedContact, setFocusedContact] = useState(null);
   const [actionMenuOpen, setActionMenuOpen] = useState(null);
 
-  // Fetch contacts from Supabase
+  // Fetch contacts from Supabase with enhanced data
   useEffect(() => {
     const fetchContactsData = async () => {
       setLoading(true);
@@ -69,11 +81,51 @@ function Contacts() {
           firstName: contact.first_name,
           lastName: contact.last_name,
           email: contact.email,
-          phone: contact.phone,
+          phone: contact.phone || contact.cell_number || contact.home_phone_number,
           tags: contact.tags || [],
-          creationDate: contact.created_at
+          creationDate: contact.created_at,
+          // Enhanced contact data
+          householdDetails: contact.household_details || {},
+          policies: contact.policies || [],
+          address: contact.address,
+          company: contact.company,
+          notes: contact.notes,
+          // Additional contact fields from your object
+          city: contact.city,
+          state: contact.state,
+          zip: contact.zip,
+          spouse_first_name: contact.spouse_first_name,
+          spouse_last_name: contact.spouse_last_name,
+          spouse_email: contact.spouse_email,
+          spouse_phone: contact.spouse_phone,
+          date_of_birth: contact.date_of_birth,
+          marital_status: contact.marital_status,
+          gender: contact.gender,
+          customer_type: contact.customer_type,
+          account_type: contact.account_type,
+          contact_status: contact.contact_status,
+          // Keep original structure for compatibility
+          first_name: contact.first_name,
+          last_name: contact.last_name,
+          cell_number: contact.cell_number,
+          home_phone_number: contact.home_phone_number,
+          work_number: contact.work_number
         }));
         setContacts(formattedContacts);
+        
+        // Extract household details and policies for easy access
+        const householdMap = {};
+        const policiesMap = {};
+        formattedContacts.forEach(contact => {
+          if (contact.householdDetails && Object.keys(contact.householdDetails).length > 0) {
+            householdMap[contact.id] = contact.householdDetails;
+          }
+          if (contact.policies && contact.policies.length > 0) {
+            policiesMap[contact.id] = contact.policies;
+          }
+        });
+        setHouseholdDetails(householdMap);
+        setContactPolicies(policiesMap);
       } catch (err) {
         console.error('Failed to fetch contacts:', err);
         setFetchError('Failed to load contacts. Please try again.');
@@ -189,6 +241,68 @@ function Contacts() {
   const handleMeetingScheduled = () => {
     console.log('👤 Contacts: Meeting scheduled, refreshing contact data...');
     setRefreshTrigger(prev => prev + 1);
+  };
+
+  // New handler functions for enhanced contact features
+  const handleScheduleMeeting = (contact) => {
+    console.log('📅 Scheduling meeting with contact:', contact);
+    setSelectedContactForMeeting(contact);
+    setIsScheduleMeetingOpen(true);
+  };
+
+  const handleEditContact = (contact) => {
+    console.log('✏️ Editing contact:', contact);
+    setContactToEdit(contact);
+    setIsEditContactOpen(true);
+  };
+
+  const handleMeetingScheduledSuccess = async (meetingData) => {
+    try {
+      // Meeting scheduling is now handled in the ScheduleMeetingModal
+      // This function just handles the cleanup and refresh
+      console.log('📅 Meeting scheduled successfully:', meetingData);
+      
+      setIsScheduleMeetingOpen(false);
+      setSelectedContactForMeeting(null);
+      setRefreshTrigger(prev => prev + 1);
+    } catch (error) {
+      console.error('Error in meeting scheduled handler:', error);
+      showError('Failed to complete meeting scheduling. Please try again.');
+    }
+  };
+
+  const handleContactUpdated = async (updatedContact) => {
+    try {
+      // This would typically call an API to update the contact
+      console.log('✏️ Updating contact:', updatedContact);
+      
+      // Update the local state
+      setContacts(prev => prev.map(contact => 
+        contact.id === updatedContact.id ? updatedContact : contact
+      ));
+      
+      // Update household details and policies maps
+      if (updatedContact.householdDetails && Object.keys(updatedContact.householdDetails).length > 0) {
+        setHouseholdDetails(prev => ({
+          ...prev,
+          [updatedContact.id]: updatedContact.householdDetails
+        }));
+      }
+      
+      if (updatedContact.policies && updatedContact.policies.length > 0) {
+        setContactPolicies(prev => ({
+          ...prev,
+          [updatedContact.id]: updatedContact.policies
+        }));
+      }
+      
+      showSuccess('Contact updated successfully!');
+      setIsEditContactOpen(false);
+      setContactToEdit(null);
+    } catch (error) {
+      console.error('Error updating contact:', error);
+      showError('Failed to update contact. Please try again.');
+    }
   };
 
   const filteredContacts = contacts.filter(contact => {
@@ -385,6 +499,8 @@ function Contacts() {
                           />
                         </th>
                         <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Name</th>
+                        <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Household Details</th>
+                        <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Policies</th>
                         <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Tags</th>
                         <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Contact Info</th>
                         <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Creation Date</th>
@@ -415,6 +531,52 @@ function Contacts() {
                               >
                                 {contact.firstName} {contact.lastName}
                               </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="space-y-1">
+                              {householdDetails[contact.id] ? (
+                                <div className="flex items-center space-x-2">
+                                  <FiHome className="w-4 h-4 text-green-600" />
+                                  <div className="text-xs">
+                                    <div className="font-medium text-gray-900">
+                                      {householdDetails[contact.id].address || 'Address Available'}
+                                    </div>
+                                    {householdDetails[contact.id].family_size && (
+                                      <div className="text-gray-500">
+                                        Family: {householdDetails[contact.id].family_size}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-gray-400 italic">No household details</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="space-y-1">
+                              {contactPolicies[contact.id] && contactPolicies[contact.id].length > 0 ? (
+                                <div className="flex items-center space-x-2">
+                                  <FiFileText className="w-4 h-4 text-blue-600" />
+                                  <div className="text-xs">
+                                    <div className="font-medium text-gray-900">
+                                      {contactPolicies[contact.id].length} Policy(ies)
+                                    </div>
+                                    <div className="text-gray-500">
+                                      {contactPolicies[contact.id].slice(0, 2).map((policy, index) => (
+                                        <span key={index}>
+                                          {policy.name || policy.type}
+                                          {index < Math.min(contactPolicies[contact.id].length - 1, 1) && ', '}
+                                        </span>
+                                      ))}
+                                      {contactPolicies[contact.id].length > 2 && '...'}
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-gray-400 italic">No policies</span>
+                              )}
                             </div>
                           </td>
                           <td className="px-6 py-4">
@@ -466,7 +628,7 @@ function Contacts() {
                               </button>
                               
                               {actionMenuOpen === contact.id && (
-                                <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-xl shadow-lg border border-gray-200 py-2 z-10">
+                                <div className="absolute right-0 top-full mt-1 w-56 bg-white rounded-xl shadow-lg border border-gray-200 py-2 z-10">
                                   <button
                                     onClick={() => {
                                       handleContactClick(contact);
@@ -474,9 +636,30 @@ function Contacts() {
                                     }}
                                     className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 flex items-center transition-colors"
                                   >
+                                    <FiUser className="mr-2" />
+                                    View Details
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      handleEditContact(contact);
+                                      setActionMenuOpen(null);
+                                    }}
+                                    className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-green-50 hover:text-green-600 flex items-center transition-colors"
+                                  >
                                     <FiEdit2 className="mr-2" />
                                     Edit Contact
                                   </button>
+                                  <button
+                                    onClick={() => {
+                                      handleScheduleMeeting(contact);
+                                      setActionMenuOpen(null);
+                                    }}
+                                    className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-purple-50 hover:text-purple-600 flex items-center transition-colors"
+                                  >
+                                    <FiCalendar className="mr-2" />
+                                    Schedule Meeting
+                                  </button>
+                                  <div className="border-t border-gray-100 my-1"></div>
                                   <button
                                     onClick={() => {
                                       handleDelete(contact.id);
@@ -693,6 +876,26 @@ function Contacts() {
         isOpen={isNewCompanyModalOpen}
         onClose={() => setIsNewCompanyModalOpen(false)}
         onCompanySaved={() => setRefreshTrigger(prev => prev + 1)}
+      />
+
+      <ScheduleMeetingModal
+        isOpen={isScheduleMeetingOpen}
+        onClose={() => {
+          setIsScheduleMeetingOpen(false);
+          setSelectedContactForMeeting(null);
+        }}
+        contact={selectedContactForMeeting}
+        onMeetingScheduled={handleMeetingScheduledSuccess}
+      />
+
+      <EditContactModal
+        isOpen={isEditContactOpen}
+        onClose={() => {
+          setIsEditContactOpen(false);
+          setContactToEdit(null);
+        }}
+        contact={contactToEdit}
+        onContactUpdated={handleContactUpdated}
       />
 
     </div>

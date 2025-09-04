@@ -317,23 +317,25 @@ function RegisterForm() {
         outlookToken: null // Will be set after sync
       });
 
-      // After successful registration, prompt for Outlook sync if email is provided
+      // After successful registration, handle Outlook sync if email is provided
       if (formData.outlookEmail) {
         setOutlookSyncing(true);
         try {
-          console.log('Starting Outlook sync for:', formData.outlookEmail);
+          console.log('🚀 Starting Outlook sync for:', formData.outlookEmail);
           const result = await initializeOutlookSync(formData.outlookEmail);
-          console.log("Outlook sync result:", result);
+          console.log("✅ Outlook sync result:", result);
           
           if (result.success) {
-            alert('Outlook calendar synced successfully!');
-          } else {
-            alert('Outlook sync completed with warnings. You can reconnect later in settings.');
+            if (result.isNewAccount) {
+              alert('✅ Outlook calendar connected successfully! You can now sync events.');
+            } else {
+              alert('✅ Outlook calendar reconnected successfully! Using existing authentication.');
+            }
           }
         } catch (syncError) {
-          console.error("Outlook sync failed:", syncError);
+          console.error("❌ Outlook sync failed:", syncError);
           // Don't block registration if sync fails, just show a warning
-          alert(`Registration successful! Outlook sync failed: ${syncError.message}. You can try again later in settings.`);
+          alert(`✅ Registration successful! Outlook sync failed: ${syncError.message}. You can try again later in settings.`);
         } finally {
           setOutlookSyncing(false);
         }

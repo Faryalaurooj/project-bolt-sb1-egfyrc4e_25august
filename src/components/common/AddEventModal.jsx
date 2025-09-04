@@ -3,6 +3,7 @@ import { Dialog } from '@headlessui/react';
 import { FiX, FiCalendar, FiUser, FiTrash2, FiClock, FiMapPin } from 'react-icons/fi';
 import { syncEventWithOutlook, syncTaskWithOutlook, deleteOutlookEvent, getOutlookCalendarEvents } from '../../services/outlookSync';
 import { getUsers } from '../../services/api';
+import { createExactDate, toDateString, debugDate } from '../../utils/dateUtils';
 
 function AddEventModal({ date, isOpen, onClose, onSave, onDeleteEvent, user, userColors, getUserName, eventsForSelectedDay = [] }) {
   const [eventText, setEventText] = useState('');
@@ -14,9 +15,22 @@ function AddEventModal({ date, isOpen, onClose, onSave, onDeleteEvent, user, use
   const [matchedUser, setMatchedUser] = useState(null);
   const [loadingUserData, setLoadingUserData] = useState(false);
 
+  // Use the new date utility function
+  const createLocalDate = createExactDate;
+
+
   useEffect(() => {
     if (date) {
-      setEventDate(date);
+      debugDate('🔧 AddEventModal - Original Date', date);
+      
+      // Create a local date using the utility function
+      const localDate = createLocalDate(date);
+      debugDate('🔧 AddEventModal - Local Date Created', localDate);
+      
+      console.log('🔧 AddEventModal - Date String:', toDateString(localDate));
+      setEventDate(localDate);
+    } else {
+      setEventDate(new Date());
     }
   }, [date]);
 
@@ -26,9 +40,7 @@ function AddEventModal({ date, isOpen, onClose, onSave, onDeleteEvent, user, use
       if (user?.email && isOpen) {
         setLoadingUserData(true);
         try {
-          console.log("🔍 Fetching users to match current user:", user.email);
           const allUsers = await getUsers();
-          console.log("👥 All users fetched:", allUsers);
           
           // Find matching user by email
           const foundUser = allUsers.find(u => 
@@ -36,14 +48,12 @@ function AddEventModal({ date, isOpen, onClose, onSave, onDeleteEvent, user, use
           );
           
           if (foundUser) {
-            console.log("✅ Matched user found:", foundUser);
             setMatchedUser(foundUser);
           } else {
-            console.log("❌ No matching user found for email:", user.email);
             setMatchedUser(null);
           }
         } catch (error) {
-          console.error('❌ Error fetching users:', error);
+          console.error('Error fetching users:', error);
           setMatchedUser(null);
         } finally {
           setLoadingUserData(false);
@@ -73,23 +83,10 @@ function AddEventModal({ date, isOpen, onClose, onSave, onDeleteEvent, user, use
           const endDate = new Date(eventDate);
           endDate.setHours(23, 59, 59, 999);
           
-          console.log(`📅 Fetching Outlook events for ${outlookEmail} on ${eventDate.toDateString()}`);
-          console.log(`📅 Start date: ${startDate.toISOString()}`);
-          console.log(`📅 End date: ${endDate.toISOString()}`);
-          
           const events = await getOutlookCalendarEvents(outlookEmail, startDate, endDate);
           setOutlookEvents(events);
-          console.log(`✅ Loaded ${events.length} Outlook events for ${eventDate.toDateString()}`);
-          console.log(`📊 Events data:`, events);
         } catch (error) {
-          console.error('❌ Failed to fetch Outlook events:', error);
-          console.error('❌ Error details:', {
-            message: error.message,
-            stack: error.stack,
-            outlookEmail,
-            startDate: startDate.toISOString(),
-            endDate: endDate.toISOString()
-          });
+          console.error('Failed to fetch Outlook events:', error);
           setOutlookEvents([]);
           
           // Show user-friendly error message
@@ -121,7 +118,7 @@ function AddEventModal({ date, isOpen, onClose, onSave, onDeleteEvent, user, use
         
         // Sync with Outlook if matched user has outlook_email
         const outlookEmail = matchedUser?.outlook_email;
-        if (outlookSync && outlookEmail) {
+                if (outlookEmail) {
           try {
             const eventData = {
               title: eventText,
@@ -135,21 +132,13 @@ function AddEventModal({ date, isOpen, onClose, onSave, onDeleteEvent, user, use
               showAs: 'busy'
             };
             
-            console.log(`📅 Syncing event to Outlook for ${outlookEmail}`);
             const result = await syncEventWithOutlook(outlookEmail, eventData);
-            console.log('✅ Event synced to Outlook calendar successfully:', result);
-            
-            // Show success message to user
-            if (result.webLink) {
-              console.log(`🔗 Event created in Outlook: ${result.webLink}`);
-            }
           } catch (outlookError) {
-            console.error('❌ Failed to sync with Outlook:', outlookError);
+            console.error('Failed to sync with Outlook:', outlookError);
             // Don't fail the entire operation if Outlook sync fails
             alert(`Event saved locally, but failed to sync with Outlook: ${outlookError.message}`);
           }
         } else if (outlookSync && !outlookEmail) {
-          console.warn('⚠️ Outlook sync requested but no outlook_email found for user');
           alert('Outlook sync is enabled but no Outlook email found for your account.');
         }
         
@@ -195,7 +184,12 @@ function AddEventModal({ date, isOpen, onClose, onSave, onDeleteEvent, user, use
                 year: 'numeric', 
                 month: 'long', 
                 day: 'numeric' 
-              }) : 'Add Team Event'}
+              }) : 'Add Event for ' + eventDate.toLocaleDateString('en-US', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+              })}
             </Dialog.Title>
             <button
               onClick={onClose}
@@ -204,6 +198,7 @@ function AddEventModal({ date, isOpen, onClose, onSave, onDeleteEvent, user, use
               <FiX className="w-6 h-6" />
             </button>
           </div>
+
 
           {/* Show existing events for the selected date */}
           {eventsForSelectedDay.length > 0 && (
@@ -244,9 +239,8 @@ function AddEventModal({ date, isOpen, onClose, onSave, onDeleteEvent, user, use
                             if (event.isOutlookEvent && outlookEmail) {
                               try {
                                 await deleteOutlookEvent(outlookEmail, event.id);
-                                console.log('✅ Event deleted from Outlook successfully');
                               } catch (outlookError) {
-                                console.error('❌ Failed to delete from Outlook:', outlookError);
+                                console.error('Failed to delete from Outlook:', outlookError);
                                 // Don't fail the entire operation if Outlook deletion fails
                               }
                             }
@@ -337,7 +331,7 @@ function AddEventModal({ date, isOpen, onClose, onSave, onDeleteEvent, user, use
           <div className="space-y-5">
             <div>
               <label className="flex items-center text-base font-semibold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent mb-3">
-                📝 {eventsForSelectedDay.length > 0 ? 'Add New Event' : 'Event Description'}
+                📝 Event Description
               </label>
               <input
                 type="text"
@@ -355,24 +349,23 @@ function AddEventModal({ date, isOpen, onClose, onSave, onDeleteEvent, user, use
 
             <div>
               <label className="flex items-center text-base font-semibold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent mb-3">
-                📅 Event Date
+                📅 Selected Date
               </label>
-              <div className="flex items-center space-x-3 p-3 bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-xl border border-purple-200 dark:border-purple-700">
+              <div className="flex items-center space-x-3 p-4 bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-xl border border-purple-200 dark:border-purple-700">
                 <FiCalendar className="text-purple-500 dark:text-purple-400 text-xl" />
-                <input
-                  type="date"
-                  value={eventDate.toISOString().split('T')[0]}
-                  onChange={(e) => setEventDate(new Date(e.target.value))}
-                  className="flex-1 rounded-lg border-2 border-purple-200 dark:border-purple-700 dark:bg-gray-700 dark:text-white shadow-sm focus:border-purple-400 focus:ring-purple-300 focus:ring-2 transition-all duration-200 p-3 text-base bg-transparent"
-                />
-              </div>
-              <div className="mt-2 text-sm text-purple-600 dark:text-purple-400">
-                Selected: {eventDate.toLocaleDateString('en-US', { 
-                  weekday: 'long', 
-                  year: 'numeric', 
-                  month: 'long', 
-                  day: 'numeric' 
-                })}
+                <div className="flex-1">
+                  <div className="text-lg font-semibold text-purple-800 dark:text-purple-200">
+                    {eventDate.toLocaleDateString('en-US', { 
+                      weekday: 'long', 
+                      year: 'numeric', 
+                      month: 'long', 
+                      day: 'numeric' 
+                    })}
+                  </div>
+                  <div className="text-sm text-purple-600 dark:text-purple-400">
+                    Date selected from calendar
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -452,6 +445,23 @@ function AddEventModal({ date, isOpen, onClose, onSave, onDeleteEvent, user, use
               </button>
             )}
           </div>
+          
+          {/* Debug Test Button */}
+          {process.env.NODE_ENV === 'development' && (
+            <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg">
+              <button
+                onClick={() => {
+                  console.log('🧪 TEST: Current event date:', eventDate);
+                  console.log('🧪 TEST: Event date day:', eventDate.getDate());
+                  console.log('🧪 TEST: Event date string:', eventDate.toLocaleDateString());
+                  alert(`Test: Event date is ${eventDate.getDate()} (${eventDate.toLocaleDateString()})`);
+                }}
+                className="px-4 py-2 bg-yellow-600 text-white text-sm rounded hover:bg-yellow-700"
+              >
+                🧪 Test Date Fix
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </Dialog>

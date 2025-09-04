@@ -1,15 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Dialog } from '@headlessui/react';
-import { FiX, FiPhone, FiUser, FiClock, FiSave, FiExternalLink } from 'react-icons/fi';
+import { FiX, FiPhone, FiUser, FiClock, FiSave, FiExternalLink, FiWifi, FiGlobe } from 'react-icons/fi';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
 import { useAuth } from '../../context/AuthContext';
 import { createPhoneCall } from '../../services/api';
+import { makeGoToConnectCall, checkGoToConnectStatus } from '../../services/gotoConnectApi';
 import ContactSelectModal from '../contacts/ContactSelectModal';
+import { useToast } from '../../hooks/useToast';
 
 function MakeCallModal({ isOpen, onClose, onCallSaved }) {
   const { user } = useAuth();
-  const gotoConnectId = import.meta.env.VITE_GoTo_CONNECT;
+  const { showSuccess, showWarning, showError } = useToast();
+  const gotoConnectId = "1746414108925783783_EmUE8Fa0uujooXAG69vxVs6MkHh6L2Tk";
   
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
@@ -22,6 +25,7 @@ function MakeCallModal({ isOpen, onClose, onCallSaved }) {
   const [callOutcome, setCallOutcome] = useState('');
   const [callStartTime, setCallStartTime] = useState(null);
   const [isCallActive, setIsCallActive] = useState(false);
+  const [gotoConnectionStatus, setGotoConnectionStatus] = useState('checking');
 
   const modules = {
     toolbar: [
@@ -41,7 +45,67 @@ function MakeCallModal({ isOpen, onClose, onCallSaved }) {
     'Call back requested'
   ];
 
-  const handleCallNow = () => {
+  // GoTo Connect Integration Check
+  useEffect(() => {
+    if (gotoConnectId) {
+      checkGoToConnectIntegration();
+    } else {
+      setGotoConnectionStatus('no-credentials');
+    }
+  }, [gotoConnectId]);
+
+  const checkGoToConnectIntegration = async () => {
+    try {
+      setGotoConnectionStatus('checking');
+      
+      if (gotoConnectId) {
+        // Check GoTo Connect status via backend
+        const statusResult = await checkGoToConnectStatus(gotoConnectId);
+        
+        if (statusResult.status === 'connected' || statusResult.status === 'ready') {
+          setGotoConnectionStatus('connected');
+          console.log('✅ GoTo Connect integration ready via backend (no CORS)');
+        } else {
+          setGotoConnectionStatus('failed');
+          console.log('❌ GoTo Connect not accessible:', statusResult.error);
+          console.log('❌ Detailed error message:', statusResult.message);
+        }
+      } else {
+        setGotoConnectionStatus('no-credentials');
+      }
+    } catch (error) {
+      console.error('❌ GoTo Connect check failed:', error);
+      setGotoConnectionStatus('failed');
+    }
+  };
+
+  // Make call using ONLY GoTo Connect API directly
+  const makeGoToCall = async (phoneNumber, contactName) => {
+    // if (!gotoConnectId) {
+    //   throw new Error('GoTo Connect not configured');
+    // }
+
+    try {
+     
+      
+      // Only use GoTo Connect API - no fallbacks, no backend
+      console.log("gotoConnectId_makeGoToCall_", gotoConnectId);
+      const callResult = await makeGoToConnectCall(phoneNumber, contactName, gotoConnectId);
+      
+      if (callResult.success) {
+        console.log('✅ GoTo Connect call successful via direct API:', callResult);
+        return callResult;
+      } else {
+        throw new Error('GoTo Connect API call failed');
+      }
+      
+    } catch (error) {
+      console.error('❌ GoTo Connect API call failed:', error);
+      throw new Error(`GoTo Connect API failed: ${error.message}. Please check your API credentials and network connection.`);
+    }
+  };
+
+  const handleCallNow = async () => {
     if (!selectedContact) {
       setError('Please select a contact to call');
       return;
@@ -58,13 +122,41 @@ function MakeCallModal({ isOpen, onClose, onCallSaved }) {
     setCallStartTime(startTime);
     setIsCallActive(true);
     
-    // Initiate the call using device's default dialer
-    window.open(`tel:${phoneNumber}`, '_self');
-    
-    // Pre-fill the call log form with timestamp
     const contactName = selectedContact.name || `${selectedContact.first_name} ${selectedContact.last_name}`;
-    setTitle(`Call to ${contactName}`);
-    setContent(`📞 Call initiated to ${contactName}\n📱 Phone: ${phoneNumber}\n⏰ Call started: ${startTime.toLocaleString()}\n🆔 GoTo Connect ID: ${gotoConnectId || 'Not configured'}\n\n--- Call Notes ---\n`);
+    
+         try {
+               // Use GoTo Connect API via backend - no CORS issues
+        if (gotoConnectionStatus === 'connected' && gotoConnectId) {
+          console.log('📞 Making call via GoTo Connect API via backend...');
+          const callResult = await makeGoToCall(phoneNumber, contactName);
+          
+          // Call was successful via GoTo Connect API via backend
+          setTitle(`Call to ${contactName} (GoTo Connect Backend API)`);
+          setContent(`📞 Call initiated via GoTo Connect API via backend\n👤 Contact: ${contactName}\n📱 Phone: ${phoneNumber}\n⏰ Call started: ${startTime.toLocaleString()}\n🆔 GoTo Connect ID: ${gotoConnectId}\n🌐 Call Method: GoTo Connect Backend API (No CORS)\n\n--- Call Notes ---\n`);
+          
+          showSuccess('📞 Call initiated successfully via GoTo Connect Backend API!');
+        } else {
+          // GoTo Connect not available - show specific error based on status
+          let errorMessage = '';
+          if (gotoConnectionStatus === 'no-credentials') {
+            errorMessage = 'GoTo Connect ID not configured. Please contact your administrator.';
+          } else if (gotoConnectionStatus === 'failed') {
+            errorMessage = 'GoTo Connect API is not accessible via backend. This may be due to network issues or backend configuration.';
+          } else if (gotoConnectionStatus === 'checking') {
+            errorMessage = 'GoTo Connect status is still being checked. Please wait and try again.';
+          } else {
+            errorMessage = 'GoTo Connect not connected. Please check your API credentials and network connection.';
+          }
+          throw new Error(errorMessage);
+        }
+                   } catch (error) {
+        console.error('❌ GoTo Connect API call failed:', error);
+        setError(`GoTo Connect API call failed: ${error.message}`);
+        
+        // GoTo Connect API via backend (no CORS issues)
+        setTitle(`Call to ${contactName} (Failed)`);
+        setContent(`❌ Call failed via GoTo Connect Backend API\n👤 Contact: ${contactName}\n📱 Phone: ${phoneNumber}\n⏰ Attempted: ${startTime.toLocaleString()}\n🆔 GoTo Connect ID: ${gotoConnectId || 'Not configured'}\n🌐 Call Method: GoTo Connect Backend API (Failed)\n❌ Error: ${error.message}\n\n--- Call Notes ---\n`);
+      }
     
     // Start a timer to track call duration
     const timer = setInterval(() => {
@@ -237,21 +329,73 @@ function MakeCallModal({ isOpen, onClose, onCallSaved }) {
                       <div className="space-y-3">
                         <button
                           onClick={handleCallNow}
-                          disabled={isCallActive}
+                          disabled={isCallActive || gotoConnectionStatus !== 'connected'}
                           className="w-full flex items-center justify-center px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <FiPhone className="mr-2" />
-                          {isCallActive ? 'Call in Progress...' : `Call ${selectedContact.name || `${selectedContact.first_name} ${selectedContact.last_name}`}`}
+                          {isCallActive ? 'Call in Progress...' : 
+                           gotoConnectionStatus !== 'connected' ? 'GoTo Connect Not Ready' :
+                           `Call ${selectedContact.name || `${selectedContact.first_name} ${selectedContact.last_name}`}`}
                         </button>
                         
-                        {isCallActive && (
-                          <button
-                            onClick={handleEndCall}
-                            className="w-full flex items-center justify-center px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
-                          >
-                            End Call & Log
-                          </button>
-                        )}
+                                                 {isCallActive && (
+                           <button
+                             onClick={handleEndCall}
+                             className="w-full flex items-center justify-center px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
+                           >
+                             End Call & Log
+                           </button>
+                         )}
+                         
+                                                   {/* GoTo Connect Status Display */}
+                          <div className="text-center p-3 rounded-lg border">
+                            {gotoConnectionStatus === 'checking' && (
+                              <div className="bg-yellow-50 border-yellow-200">
+                                <p className="text-xs text-yellow-700 font-medium">
+                                  🔍 Checking GoTo Connect status...
+                                </p>
+                                <p className="text-xs text-yellow-600 mt-1">
+                                  Please wait while we verify the connection
+                                </p>
+                              </div>
+                            )}
+                            {gotoConnectionStatus === 'connected' && (
+                              <div className="bg-green-50 border-green-200">
+                                <p className="text-xs text-green-700 font-medium">
+                                  ✅ GoTo Connect ready
+                                </p>
+                                <p className="text-xs text-green-600 mt-1">
+                                  Backend API calls available (No CORS)
+                                </p>
+                              </div>
+                            )}
+                            {gotoConnectionStatus === 'failed' && (
+                              <div className="bg-red-50 border-red-200">
+                                <p className="text-xs text-red-700 font-medium">
+                                  ❌ GoTo Connect not accessible
+                                </p>
+                                <p className="text-xs text-red-600 mt-1">
+                                  Backend API or network issues detected
+                                </p>
+                                <button
+                                  onClick={checkGoToConnectIntegration}
+                                  className="text-xs text-red-600 hover:text-red-700 underline mt-1"
+                                >
+                                  Retry Connection
+                                </button>
+                              </div>
+                            )}
+                            {gotoConnectionStatus === 'no-credentials' && (
+                              <div className="bg-orange-50 border-orange-200">
+                                <p className="text-xs text-orange-700 font-medium">
+                                  ⚠️ GoTo Connect ID not configured
+                                </p>
+                                <p className="text-xs text-orange-600 mt-1">
+                                  Contact your administrator
+                                </p>
+                              </div>
+                            )}
+                          </div>
                       </div>
                       <p className="text-xs text-green-700 mt-2 text-center">
                         Phone: {selectedContact.phone || selectedContact.contact_number || selectedContact.cell_number}
@@ -331,46 +475,7 @@ function MakeCallModal({ isOpen, onClose, onCallSaved }) {
                 </div>
               </div>
 
-              {/* GoTo Connect Integration Info */}
-              <div className="mt-6 bg-blue-50 p-4 rounded-lg border border-blue-200">
-                <h4 className="text-sm font-medium text-blue-800 mb-2 flex items-center">
-                  <FiExternalLink className="mr-2" />
-                  GoTo Connect Integration Status
-                </h4>
-                
-                {gotoConnectId ? (
-                  <div className="space-y-2">
-                    <div className="flex items-center space-x-2">
-                      <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                      <span className="text-xs text-blue-700 font-medium">GoTo Connect ID Configured</span>
-                    </div>
-                    <p className="text-xs text-blue-600 bg-blue-100 p-2 rounded">
-                      Connect ID: {gotoConnectId.substring(0, 20)}...
-                    </p>
-                    <p className="text-xs text-blue-700">
-                      Note: This ID is for GoTo Connect integration. For browser-based VoIP calling, additional API integration would be required.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <div className="flex items-center space-x-2">
-                      <span className="w-2 h-2 bg-yellow-500 rounded-full"></span>
-                      <span className="text-xs text-blue-700 font-medium">GoTo Connect ID Not Found</span>
-                    </div>
-                    <p className="text-xs text-blue-700">
-                      Add VITE_GoTo_CONNECT to your .env file for GoTo Connect integration.
-                    </p>
-                  </div>
-                )}
-                
-                <p className="text-xs text-blue-700">
-                  Current functionality: Standard phone dialer integration
-                </p>
-                
-                <div className="mt-3 p-2 bg-blue-100 rounded text-xs text-blue-800">
-                  <strong>For Browser VoIP:</strong> GoTo Connect API integration would require additional backend implementation for browser-based calling.
-                </div>
-              </div>
+                      
 
               <div className="flex justify-end space-x-3 mt-6">
                 <button

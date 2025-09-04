@@ -700,19 +700,22 @@
 
 import { Client } from "@microsoft/microsoft-graph-client";
 import { PublicClientApplication } from "@azure/msal-browser";
+import { createOutlookEventTimes, parseOutlookDate, createDateRange, debugDate } from '../utils/dateUtils';
 
 // =========================
 // MSAL CONFIGURATION
 // =========================
 const msalConfig = {
   auth: {
-    clientId: "d49cebd1-a756-42c9-8d25-a8870739850a", // Your Azure AD App Client ID
+    clientId: "d49cebd1-a756-42c9-8d25-a8870739850a",
     authority: "https://login.microsoftonline.com/common",
     redirectUri: window.location.origin,
   },
   cache: {
-    cacheLocation: "sessionStorage",
+    cacheLocation: "localStorage", // Persists across browser restarts
     storeAuthStateInCookie: false,
+    // Optional: Add secure cookie storage for additional security
+    // secureCookies: true, // Only works with HTTPS
   },
 };
 
@@ -724,7 +727,7 @@ export const loginRequest = {
     "Calendars.Read",
     "Calendars.ReadWrite",
     "Mail.Read",
-    "Mail.Send", // For sending emails
+    "Mail.Send",
     "offline_access", // Required for refresh tokens
   ],
 };
@@ -733,7 +736,7 @@ let msalInstance = null;
 let isInitializing = false;
 
 // =========================
-// INIT HELPERS
+// MSAL INITIALIZATION
 // =========================
 export const initializeMSAL = async () => {
   if (msalInstance) return msalInstance;
@@ -751,14 +754,14 @@ export const initializeMSAL = async () => {
 
   isInitializing = true;
   try {
-    console.log("Initializing MSAL...");
+    console.log("🔧 Initializing MSAL...");
     msalInstance = new PublicClientApplication(msalConfig);
     await msalInstance.initialize();
-    console.log("MSAL initialized successfully");
+    console.log("✅ MSAL initialized successfully");
     isInitializing = false;
     return msalInstance;
   } catch (error) {
-    console.error("MSAL initialization failed:", error);
+    console.error("❌ MSAL initialization failed:", error);
     msalInstance = null;
     isInitializing = false;
     throw error;
@@ -771,65 +774,88 @@ export const getMSALInstance = async () => {
 };
 
 // =========================
-// TOKEN HELPERS
+// TOKEN MANAGEMENT
 // =========================
 
-// Acquire token for a specific user (by email)
+// Check if user account exists in MSAL cache
+export const hasExistingAccount = async (userEmail) => {
+  try {
+    const msalInstance = await getMSALInstance();
+    const accounts = msalInstance.getAllAccounts();
+    
+    const existingAccount = accounts.find(
+      (acc) => acc.username.toLowerCase() === userEmail.toLowerCase()
+    );
+    
+    return {
+      exists: !!existingAccount,
+      account: existingAccount
+    };
+  } catch (error) {
+    console.error("Error checking existing account:", error);
+    return { exists: false, account: null };
+  }
+};
+
+// Get access token with proper refresh handling
 const getAccessTokenForUser = async (userEmail, scopes = loginRequest.scopes) => {
-  console.log(`🔑 Getting access token for user: ${userEmail}`);
-  console.log(`🔑 Required scopes:`, scopes);
+  console.log(`🔑 Getting access token for: ${userEmail}`);
   
-  let msalInstance = await getMSALInstance();
-  let accounts = msalInstance.getAllAccounts();
+  const msalInstance = await getMSALInstance();
+  const accounts = msalInstance.getAllAccounts();
 
-  console.log(`👥 Available accounts:`, accounts.map(acc => ({
-    username: acc.username,
-    name: acc.name,
-    localAccountId: acc.localAccountId
-  })));
-
-  // Find account matching user email
+  // Find existing account
   let account = accounts.find(
     (acc) => acc.username.toLowerCase() === userEmail.toLowerCase()
   );
 
+  // If no account exists, login first
   if (!account) {
-    console.log('🔐 No existing account found, initiating login popup');
+    console.log('🔐 No existing account found, initiating login...');
     try {
       const loginResponse = await msalInstance.loginPopup(loginRequest);
       account = loginResponse.account;
-      console.log('✅ Login successful, account:', {
-        username: loginResponse.account.username,
-        name: loginResponse.account.name,
-        localAccountId: loginResponse.account.localAccountId
-      });
+      console.log('✅ Login successful for:', account.username);
     } catch (loginError) {
-      console.error('❌ Login popup failed:', loginError);
+      console.error('❌ Login failed:', loginError);
       throw new Error(`Login failed: ${loginError.message}`);
     }
   } else {
-    console.log('✅ Using existing account:', {
-      username: account.username,
-      name: account.name,
-      localAccountId: account.localAccountId
-    });
+    console.log('✅ Using existing account:', account.username);
   }
 
+  // Try to get token silently first (uses refresh token if available)
   try {
-    console.log('🔑 Attempting silent token acquisition...');
-    const response = await msalInstance.acquireTokenSilent({ scopes, account });
-    console.log('✅ Silent token acquisition successful');
+    console.log('🔄 Attempting silent token acquisition...');
+    const response = await msalInstance.acquireTokenSilent({ 
+      scopes, 
+      account,
+      forceRefresh: false // Don't force refresh unless needed
+    });
+    
+    console.log('✅ Token acquired silently (using refresh token)');
     return response.accessToken;
-  } catch (error) {
-    console.warn("⚠️ Silent token acquisition failed, trying popup:", error);
+    
+  } catch (silentError) {
+    console.warn("⚠️ Silent token acquisition failed:", silentError.message);
+    
+    // If silent fails, try interactive (popup)
+    if (silentError.errorCode === 'consent_required' || 
+        silentError.errorCode === 'interaction_required' ||
+        silentError.errorCode === 'token_expired') {
+      
+      console.log('🔄 Trying interactive token acquisition...');
     try {
       const response = await msalInstance.acquireTokenPopup({ scopes, account });
       console.log('✅ Token acquired via popup');
       return response.accessToken;
     } catch (popupError) {
-      console.error('❌ Popup token acquisition failed:', popupError);
+        console.error('❌ Interactive token acquisition failed:', popupError);
       throw new Error(`Token acquisition failed: ${popupError.message}`);
     }
+    }
+    
+    throw new Error(`Token acquisition failed: ${silentError.message}`);
   }
 };
 
@@ -844,26 +870,105 @@ const getGraphClientForUser = async (userEmail, scopes = loginRequest.scopes) =>
 };
 
 // =========================
-// LOGIN / SYNC INIT
+// OUTLOOK SYNC INITIALIZATION
 // =========================
-export const loginUser = async () => {
-  const msalInstance = await getMSALInstance();
-  const response = await msalInstance.loginPopup(loginRequest);
-  return response.account;
-};
 
+// Initialize Outlook sync for a user
 export const initializeOutlookSync = async (userEmail) => {
   try {
+    console.log(`🚀 Initializing Outlook sync for: ${userEmail}`);
+    
+    // Check if account already exists
+    const { exists, account } = await hasExistingAccount(userEmail);
+    
+    if (exists) {
+      console.log(`✅ Account already exists for: ${userEmail}`);
+      console.log(`📧 Account details:`, {
+        username: account.username,
+        name: account.name,
+        localAccountId: account.localAccountId
+      });
+    } else {
+      console.log(`🆕 New account will be created for: ${userEmail}`);
+    }
+    
+    // Get access token (will use refresh token if available)
     const token = await getAccessTokenForUser(userEmail, loginRequest.scopes);
+    
+    console.log(`✅ Outlook sync successful for: ${userEmail}`);
+    
     return {
       success: true,
       message: "Outlook sync completed successfully",
       account: userEmail,
-      token,
+      isNewAccount: !exists,
+      token: token.substring(0, 20) + "...", // Don't return full token for security
     };
+    
   } catch (error) {
-    console.error("Outlook sync error:", error);
-    throw new Error(`Outlook sync failed: ${error.message}`);
+    console.error("❌ Outlook sync error:", error);
+    
+    // Enhanced error handling
+    let errorMessage = "Outlook sync failed";
+    
+    if (error.message.includes('user_cancelled')) {
+      errorMessage = "Outlook sync cancelled by user";
+    } else if (error.message.includes('popup_window_error')) {
+      errorMessage = "Please allow popups for Outlook authentication";
+    } else if (error.message.includes('consent_required')) {
+      errorMessage = "Please grant permissions for Outlook access";
+    } else if (error.message.includes('interaction_required')) {
+      errorMessage = "Please complete the authentication process";
+    } else {
+      errorMessage = `Outlook sync failed: ${error.message}`;
+    }
+    
+    throw new Error(errorMessage);
+  }
+};
+
+// Check if user is already authenticated with Outlook
+export const isUserAuthenticated = async (userEmail) => {
+  try {
+    const { exists } = await hasExistingAccount(userEmail);
+    return exists;
+  } catch (error) {
+    console.error("Error checking authentication status:", error);
+    return false;
+  }
+};
+
+// Re-authenticate user (force new login)
+export const reAuthenticateUser = async (userEmail) => {
+  try {
+    console.log(`🔄 Re-authenticating user: ${userEmail}`);
+    
+    const msalInstance = await getMSALInstance();
+    
+    // Remove existing account from cache
+    const accounts = msalInstance.getAllAccounts();
+    const account = accounts.find(
+      (acc) => acc.username.toLowerCase() === userEmail.toLowerCase()
+    );
+    
+    if (account) {
+      await msalInstance.removeAccount(account);
+      console.log(`🗑️ Removed existing account for: ${userEmail}`);
+    }
+    
+    // Force new login
+    const loginResponse = await msalInstance.loginPopup(loginRequest);
+    console.log(`✅ Re-authentication successful for: ${loginResponse.account.username}`);
+    
+    return {
+      success: true,
+      message: "Re-authentication completed successfully",
+      account: loginResponse.account.username
+    };
+    
+  } catch (error) {
+    console.error("❌ Re-authentication failed:", error);
+    throw new Error(`Re-authentication failed: ${error.message}`);
   }
 };
 
@@ -874,34 +979,23 @@ export const initializeOutlookSync = async (userEmail) => {
 // Fetch Calendar Events
 export const getOutlookCalendarEvents = async (userEmail, startDate, endDate) => {
   try {
-    console.log(`🔍 Starting Outlook events fetch for ${userEmail}`);
-    console.log(`📅 Date range: ${startDate.toISOString()} to ${endDate.toISOString()}`);
+    console.log(`📅 Fetching Outlook events for ${userEmail}`);
     
     // Validate inputs
-    if (!userEmail) {
-      throw new Error('User email is required');
-    }
+    if (!userEmail) throw new Error('User email is required');
+    if (!startDate || !endDate) throw new Error('Start and end dates are required');
     
-    if (!startDate || !endDate) {
-      throw new Error('Start and end dates are required');
-    }
-    
-    console.log(`🔑 Getting Graph client for ${userEmail}...`);
+    // Get Graph client with calendar permissions
     const client = await getGraphClientForUser(userEmail, [
       "Calendars.Read",
       "Calendars.ReadWrite",
     ]);
-    console.log(`✅ Graph client obtained successfully`);
     
     const start = startDate.toISOString();
     const end = endDate.toISOString();
 
-    console.log(`📅 Fetching Outlook events for ${userEmail} from ${start} to ${end}`);
-
-    // Try to fetch events with more detailed error handling
-    let events;
-    try {
-      events = await client
+    // Fetch events from Outlook
+    const events = await client
         .api("/me/calendarview")
         .query({
           startDateTime: start,
@@ -911,32 +1005,25 @@ export const getOutlookCalendarEvents = async (userEmail, startDate, endDate) =>
         })
         .get();
       
-      console.log(`📊 Raw API response:`, events);
-    } catch (apiError) {
-      console.error(`❌ Microsoft Graph API error:`, apiError);
-      console.error(`❌ Error details:`, {
-        message: apiError.message,
-        code: apiError.code,
-        statusCode: apiError.statusCode,
-        body: apiError.body
-      });
-      throw apiError;
-    }
-
-    if (!events || !events.value) {
-      console.warn(`⚠️ No events data in response:`, events);
+    if (!events?.value) {
+      console.log(`📅 No events found for ${userEmail}`);
       return [];
     }
 
     console.log(`✅ Found ${events.value.length} Outlook events`);
 
-    const mappedEvents = events.value.map((event) => {
-      console.log(`📝 Processing event:`, event);
+    // Map events to our format using the new date utility
+    return events.value.map((event) => {
+      const eventDate = parseOutlookDate(event.start?.dateTime);
+      
+      debugDate(`🔧 Outlook Event ${event.id}`, new Date(event.start?.dateTime));
+      console.log(`🔧 Outlook event date: ${eventDate}`);
+      
       return {
         id: `outlook-${event.id}`,
         event_text: event.subject || "Outlook Event",
-        event_date: event.start?.dateTime ? event.start.dateTime.split("T")[0] : new Date().toISOString().split("T")[0],
-        color: "#0078D4", // Microsoft blue
+        event_date: eventDate,
+        color: "#0078D4",
         user_id: userEmail,
         source: "outlook",
         location: event.location?.displayName,
@@ -945,59 +1032,60 @@ export const getOutlookCalendarEvents = async (userEmail, startDate, endDate) =>
         isAllDay: event.isAllDay,
         startTime: event.start?.dateTime,
         endTime: event.end?.dateTime,
-        isOutlookEvent: true, // Flag to identify Outlook events
+        isOutlookEvent: true,
       };
     });
 
-    console.log(`🎯 Final mapped events:`, mappedEvents);
-    return mappedEvents;
   } catch (error) {
     console.error(`❌ Error fetching events for ${userEmail}:`, error);
-    console.error(`❌ Error stack:`, error.stack);
-    throw error; // Re-throw to let caller handle it
+    
+    // Handle specific error cases
+    if (error.statusCode === 401) {
+      throw new Error('Authentication expired. Please re-authenticate with Outlook.');
+    } else if (error.statusCode === 403) {
+      throw new Error('Permission denied. Please ensure calendar access is granted.');
+    }
+    
+    throw error;
   }
 };
 
 // Sync Event to Outlook Calendar
 export const syncEventWithOutlook = async (userEmail, eventData) => {
+  console.log(`Creating`,userEmail);
   try {
-    console.log(`📅 Starting calendar event creation for ${userEmail}`);
-    console.log(`📅 Event data received:`, eventData);
     
+    
+    // Get Graph client
     const client = await getGraphClientForUser(userEmail, ["Calendars.ReadWrite"]);
-    console.log(`✅ Graph client obtained for calendar operations`);
     
-    // Parse the event date properly
+    // Parse and validate event date
     const eventDate = new Date(eventData.dueDate || eventData.eventDate);
-    console.log(`📅 Parsed event date:`, eventDate);
-    console.log(`📅 Event date string:`, eventData.dueDate || eventData.eventDate);
-    
-    // Validate the date
+    console.log("eventDate___", eventDate);
     if (isNaN(eventDate.getTime())) {
       throw new Error(`Invalid date format: ${eventData.dueDate || eventData.eventDate}`);
     }
     
-    // Set event to be 1 hour long by default, or use provided duration
-    const startTime = eventDate;
-    const endTime = new Date(startTime.getTime() + (eventData.duration || 60) * 60 * 1000);
+    // Use the new date utility to create proper event times
+    const { startTime, endTime, timeZone } = createOutlookEventTimes(eventDate, eventData.duration || 60);
     
-    console.log(`📅 Event timing:`, {
+    debugDate("🔧 Outlook Sync - Event Date", eventDate);
+    console.log("🔧 Outlook sync times:", {
       startTime: startTime.toISOString(),
       endTime: endTime.toISOString(),
-      duration: eventData.duration || 60,
-      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+      timeZone
     });
     
-    // Create event data for Outlook
+    // Create Outlook event
     const outlookEvent = {
       subject: eventData.title || eventData.eventText,
       start: {
         dateTime: startTime.toISOString(),
-        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        timeZone: timeZone,
       },
       end: {
         dateTime: endTime.toISOString(),
-        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        timeZone: timeZone,
       },
       body: {
         contentType: "HTML",
@@ -1012,32 +1100,16 @@ export const syncEventWithOutlook = async (userEmail, eventData) => {
           </div>
         `,
       },
-      categories: ["CRM Event"], // Tag events from CRM
+      categories: ["CRM Event"],
       isReminderOn: true,
       reminderMinutesBeforeStart: eventData.reminderMinutes || 15,
       showAs: eventData.showAs || "busy",
       importance: eventData.priority === "High" ? "high" : eventData.priority === "Low" ? "low" : "normal"
     };
     
-    console.log(`📅 Creating Outlook calendar event for ${userEmail}:`, outlookEvent);
-    console.log(`📅 Event structure:`, {
-      subject: outlookEvent.subject,
-      startDateTime: outlookEvent.start.dateTime,
-      endDateTime: outlookEvent.end.dateTime,
-      timeZone: outlookEvent.start.timeZone,
-      hasLocation: !!eventData.location,
-      hasDescription: !!eventData.description
-    });
-    
+    // Create event in Outlook
     const result = await client.api("/me/events").post(outlookEvent);
-    console.log(`✅ Event created successfully in Outlook calendar:`, result);
-    console.log(`✅ Event details:`, {
-      id: result.id,
-      subject: result.subject,
-      start: result.start,
-      end: result.end,
-      webLink: result.webLink
-    });
+    console.log(`✅ Event created successfully: ${result.subject}`);
     
     return {
       success: true,
@@ -1045,42 +1117,20 @@ export const syncEventWithOutlook = async (userEmail, eventData) => {
       webLink: result.webLink,
       event: result
     };
+    
   } catch (error) {
-    console.error(`❌ Error creating Outlook calendar event for ${userEmail}:`, error);
-    console.error(`❌ Error details:`, {
-      message: error.message,
-      code: error.code,
-      statusCode: error.statusCode,
-      body: error.body,
-      stack: error.stack
-    });
+    console.error(`❌ Error creating Outlook event for ${userEmail}:`, error);
     
-    // Enhanced error handling for calendar events
-    let errorMessage = error.message;
-    
+    // Handle specific error cases
     if (error.statusCode === 401) {
-      errorMessage = `Authentication failed for calendar access. Please ensure you're logged in to your Outlook account (${userEmail}) and have granted Calendars.ReadWrite permission.`;
+      throw new Error('Authentication expired. Please re-authenticate with Outlook.');
     } else if (error.statusCode === 403) {
-      if (error.message.includes('admin consent') || error.message.includes('admin approval') || error.message.includes('unverified')) {
-        errorMessage = `Admin approval required. Your IT administrator needs to grant "Calendars.ReadWrite" permission to this app. Please contact your administrator to visit the Azure Portal and grant admin consent for app ID: d49cebd1-a756-42c9-8d25-a8870739850a`;
-      } else {
-        errorMessage = `Permission denied. The application doesn't have Calendars.ReadWrite permission for your Outlook account. Please contact your administrator.`;
-      }
+      throw new Error('Permission denied. Please ensure calendar access is granted.');
     } else if (error.statusCode === 400) {
-      if (error.message.includes('invalid') && error.message.includes('date')) {
-        errorMessage = `Invalid date format. Please check the meeting date and time.`;
-      } else if (error.message.includes('invalid') && error.message.includes('time')) {
-        errorMessage = `Invalid time format. Please check the meeting time.`;
-      } else {
-        errorMessage = `Bad request. Please check the meeting details and try again.`;
-      }
-    } else if (error.statusCode === 429) {
-      errorMessage = `Rate limit exceeded. Please wait a moment and try again.`;
-    } else if (error.statusCode >= 500) {
-      errorMessage = `Microsoft Graph API server error. Please try again later.`;
+      throw new Error('Invalid event data. Please check the event details.');
     }
     
-    throw new Error(`Failed to sync event to Outlook: ${errorMessage}`);
+    throw new Error(`Failed to create Outlook event: ${error.message}`);
   }
 };
 
@@ -1375,6 +1425,90 @@ export const getOutlookCalendarInfo = async (userEmail) => {
   }
 };
 
+
+// =========================
+// UTILITY FUNCTIONS
+// =========================
+
+// Check token status for a user
+export const checkTokenStatus = async (userEmail) => {
+  try {
+    const { exists, account } = await hasExistingAccount(userEmail);
+    
+    if (!exists) {
+      return {
+        isAuthenticated: false,
+        needsLogin: true,
+        message: "User not authenticated"
+      };
+    }
+    
+    // Try to get token silently to check if it's valid
+    try {
+      await getAccessTokenForUser(userEmail, ["User.Read"]);
+      return {
+        isAuthenticated: true,
+        needsLogin: false,
+        message: "Token is valid",
+        account: account.username
+      };
+    } catch (error) {
+      return {
+        isAuthenticated: false,
+        needsLogin: true,
+        message: "Token expired or invalid",
+        error: error.message
+      };
+    }
+  } catch (error) {
+    return {
+      isAuthenticated: false,
+      needsLogin: true,
+      message: "Error checking token status",
+      error: error.message
+    };
+  }
+};
+
+// Get all authenticated users
+export const getAuthenticatedUsers = async () => {
+  try {
+    const msalInstance = await getMSALInstance();
+    const accounts = msalInstance.getAllAccounts();
+    
+    return accounts.map(account => ({
+      username: account.username,
+      name: account.name,
+      localAccountId: account.localAccountId
+    }));
+  } catch (error) {
+    console.error("Error getting authenticated users:", error);
+    return [];
+  }
+};
+
+// Logout specific user
+export const logoutUser = async (userEmail) => {
+  try {
+    const msalInstance = await getMSALInstance();
+    const accounts = msalInstance.getAllAccounts();
+    
+    const account = accounts.find(
+      (acc) => acc.username.toLowerCase() === userEmail.toLowerCase()
+    );
+    
+    if (account) {
+      await msalInstance.removeAccount(account);
+      console.log(`✅ Logged out user: ${userEmail}`);
+      return { success: true, message: "User logged out successfully" };
+    } else {
+      return { success: false, message: "User not found" };
+    }
+  } catch (error) {
+    console.error("Error logging out user:", error);
+    throw new Error(`Logout failed: ${error.message}`);
+  }
+};
 
 // =========================
 // AUTO INIT

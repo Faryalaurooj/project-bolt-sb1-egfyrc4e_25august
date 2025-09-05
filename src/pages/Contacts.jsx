@@ -87,6 +87,7 @@ function Contacts() {
           // Enhanced contact data
           householdDetails: contact.household_details || {},
           policies: contact.policies || [],
+          policyDocuments: contact.policy_documents || [],
           address: contact.address,
           company: contact.company,
           notes: contact.notes,
@@ -500,7 +501,7 @@ function Contacts() {
                         </th>
                         <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Name</th>
                         <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Household Details</th>
-                        <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Policies</th>
+                        <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Policies & Documents</th>
                         <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Tags</th>
                         <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Contact Info</th>
                         <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Creation Date</th>
@@ -556,6 +557,7 @@ function Contacts() {
                           </td>
                           <td className="px-6 py-4">
                             <div className="space-y-1">
+                              {/* Policies */}
                               {contactPolicies[contact.id] && contactPolicies[contact.id].length > 0 ? (
                                 <div className="flex items-center space-x-2">
                                   <FiFileText className="w-4 h-4 text-blue-600" />
@@ -575,7 +577,36 @@ function Contacts() {
                                   </div>
                                 </div>
                               ) : (
-                                <span className="text-xs text-gray-400 italic">No policies</span>
+                                <div className="flex items-center space-x-2">
+                                  <FiFileText className="w-4 h-4 text-gray-400" />
+                                  <span className="text-xs text-gray-400 italic">No policies</span>
+                                </div>
+                              )}
+                              
+                              {/* Policy Documents */}
+                              {contact.policyDocuments && contact.policyDocuments.length > 0 ? (
+                                <div className="flex items-center space-x-2 mt-1">
+                                  <FiFileText className="w-4 h-4 text-green-600" />
+                                  <div className="text-xs">
+                                    <div className="font-medium text-gray-900">
+                                      {contact.policyDocuments.length} Document(s)
+                                    </div>
+                                    <div className="text-gray-500">
+                                      {contact.policyDocuments.slice(0, 2).map((doc, index) => (
+                                        <span key={index}>
+                                          {doc.file_name}
+                                          {index < Math.min(contact.policyDocuments.length - 1, 1) && ', '}
+                                        </span>
+                                      ))}
+                                      {contact.policyDocuments.length > 2 && '...'}
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="flex items-center space-x-2 mt-1">
+                                  <FiFileText className="w-4 h-4 text-gray-400" />
+                                  <span className="text-xs text-gray-400 italic">No documents</span>
+                                </div>
                               )}
                             </div>
                           </td>

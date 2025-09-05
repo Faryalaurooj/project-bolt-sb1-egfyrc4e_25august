@@ -2,6 +2,19 @@ import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import { db } from '../db.js';
 
+// Helper function to validate and clean date values
+const cleanDateValue = (dateValue) => {
+  if (!dateValue || dateValue.trim() === '' || dateValue === 'null' || dateValue === 'undefined') {
+    return null;
+  }
+  // Validate that it's a proper date format
+  const date = new Date(dateValue);
+  if (isNaN(date.getTime())) {
+    return null;
+  }
+  return dateValue;
+};
+
 const router = express.Router();
 
 // Create a new policy
@@ -26,8 +39,8 @@ router.post('/', authenticateToken, async (req, res) => {
         policy_type,
         company,
         policy_number,
-        effective_date,
-        expiration_date,
+        effective_date: cleanDateValue(effective_date),
+        expiration_date: cleanDateValue(expiration_date),
         premium,
         pfm_level,
         policy_forms,
@@ -77,13 +90,19 @@ router.get('/', authenticateToken, async (req, res) => {
 // Update a policy
 router.put('/:id', authenticateToken, async (req, res) => {
   try {
+    const { effective_date, expiration_date, ...otherFields } = req.body;
+    
+    const updateData = {
+      ...otherFields,
+      effective_date: cleanDateValue(effective_date),
+      expiration_date: cleanDateValue(expiration_date),
+      updated_at: new Date()
+    };
+    
     const [policy] = await db('policies')
       .where('id', req.params.id)
       .andWhere('created_by', req.user.userId)
-      .update({
-        ...req.body,
-        updated_at: new Date()
-      })
+      .update(updateData)
       .returning('*');
     
     if (!policy) {

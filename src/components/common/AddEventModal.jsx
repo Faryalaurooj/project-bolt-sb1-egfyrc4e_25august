@@ -14,6 +14,8 @@ function AddEventModal({ date, isOpen, onClose, onSave, onDeleteEvent, user, use
   const [loadingOutlookEvents, setLoadingOutlookEvents] = useState(false);
   const [matchedUser, setMatchedUser] = useState(null);
   const [loadingUserData, setLoadingUserData] = useState(false);
+  const [allUsers, setAllUsers] = useState([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
 
   // Use the new date utility function
   const createLocalDate = createExactDate;
@@ -39,11 +41,13 @@ function AddEventModal({ date, isOpen, onClose, onSave, onDeleteEvent, user, use
     const fetchAndMatchUser = async () => {
       if (user?.email && isOpen) {
         setLoadingUserData(true);
+        setLoadingUsers(true);
         try {
-          const allUsers = await getUsers();
+          const allUsersData = await getUsers();
+          setAllUsers(allUsersData);
           
           // Find matching user by email
-          const foundUser = allUsers.find(u => 
+          const foundUser = allUsersData.find(u => 
             u.email?.toLowerCase() === user.email?.toLowerCase()
           );
           
@@ -55,11 +59,14 @@ function AddEventModal({ date, isOpen, onClose, onSave, onDeleteEvent, user, use
         } catch (error) {
           console.error('Error fetching users:', error);
           setMatchedUser(null);
+          setAllUsers([]);
         } finally {
           setLoadingUserData(false);
+          setLoadingUsers(false);
         }
       } else {
         setMatchedUser(null);
+        setAllUsers([]);
       }
     };
 
@@ -118,21 +125,37 @@ function AddEventModal({ date, isOpen, onClose, onSave, onDeleteEvent, user, use
         
         // Sync with Outlook if matched user has outlook_email
         const outlookEmail = matchedUser?.outlook_email;
-                if (outlookEmail) {
+        if (outlookEmail) {
           try {
             const eventData = {
               title: eventText,
               eventText: eventText,
               eventDate: eventDate,
               dueDate: eventDate,
-              description: `Event created from CRM: ${eventText}`,
+              description: `${eventText}`,
               priority: 'Normal',
               duration: 60, // 1 hour default
               reminderMinutes: 15,
-              showAs: 'busy'
+              showAs: 'busy',
+              attendees: getUsersWithOutlookEmails().map(attendee => ({
+                emailAddress: {
+                  address: attendee.outlook_email,
+                  name: `${attendee.first_name || ''} ${attendee.last_name || ''}`.trim() || attendee.email
+                },
+                type: 'required'
+              }))
             };
             
             const result = await syncEventWithOutlook(outlookEmail, eventData);
+            const attendeeCount = getUsersWithOutlookEmails().length;
+            console.log('✅ Event synced with Outlook including attendees:', attendeeCount);
+            
+            // Show success message with attendee count
+            if (attendeeCount > 0) {
+              alert(`✅ Event created and meeting invites sent to ${attendeeCount} team member(s)!`);
+            } else {
+              alert('✅ Event created and synced with Outlook!');
+            }
           } catch (outlookError) {
             console.error('Failed to sync with Outlook:', outlookError);
             // Don't fail the entire operation if Outlook sync fails
@@ -164,6 +187,15 @@ function AddEventModal({ date, isOpen, onClose, onSave, onDeleteEvent, user, use
     }
     return 'You';
   };
+
+  // Get users with Outlook emails (excluding current user)
+  const getUsersWithOutlookEmails = () => {
+    return allUsers.filter(u => 
+      u.outlook_email && 
+      u.email?.toLowerCase() !== user?.email?.toLowerCase()
+    );
+  };
+
 
   if (!isOpen) return null;
 
@@ -417,6 +449,54 @@ function AddEventModal({ date, isOpen, onClose, onSave, onDeleteEvent, user, use
                 </span>
               </div>
             ) : null}
+
+            {/* Auto-invite all team members */}
+            {matchedUser?.outlook_email && (
+              <div>
+                <label className="flex items-center text-base font-semibold bg-gradient-to-r from-green-600 to-teal-600 bg-clip-text text-transparent mb-3">
+                  👥 Team Meeting
+                </label>
+                {loadingUsers ? (
+                  <div className="flex items-center space-x-3 p-4 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700 rounded-xl border border-gray-200 dark:border-gray-600">
+                    <div className="animate-spin w-5 h-5 border-2 border-gray-400 border-t-transparent rounded-full"></div>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">
+                      Loading team members...
+                    </span>
+                  </div>
+                ) : getUsersWithOutlookEmails().length > 0 ? (
+                  <div className="p-4 bg-gradient-to-r from-green-50 to-teal-50 dark:from-green-900/20 dark:to-teal-900/20 rounded-xl border border-green-200 dark:border-green-700">
+                    <div className="flex items-center space-x-3 mb-3">
+                      <div className="text-green-600 dark:text-green-400 text-lg">📧</div>
+                      <div className="text-sm font-medium text-green-800 dark:text-green-200">
+                        Meeting invites will be automatically sent to all team members
+                      </div>
+                    </div>
+                    <div className="text-xs text-green-600 dark:text-green-400 space-y-1">
+                      <div className="font-medium mb-2">Team members ({getUsersWithOutlookEmails().length}):</div>
+                      {getUsersWithOutlookEmails().map(attendee => (
+                        <div key={attendee.id} className="flex items-center space-x-2">
+                          <div
+                            className="w-3 h-3 rounded-full border border-white shadow-sm"
+                            style={{ backgroundColor: userColors?.get(attendee.id) || '#10B981' }}
+                          />
+                          <span>
+                            {`${attendee.first_name || ''} ${attendee.last_name || ''}`.trim() || attendee.email}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-6 text-gray-500 dark:text-gray-400">
+                    <div className="text-4xl mb-3">👥</div>
+                    <div className="text-sm font-medium mb-2">No team members with Outlook emails found</div>
+                    <div className="text-xs text-gray-400 dark:text-gray-500">
+                      Team members need to have their Outlook email configured in their profile
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="flex justify-end space-x-4 mt-8">

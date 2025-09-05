@@ -7,7 +7,7 @@ function NewContactModal({ isOpen, onClose, onContactSaved }) { // Accept onCont
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
-    dateOfBirth: '',
+    dateOfBirth: null,
     gender: '',
     maritalStatus: '',
     language: 'English',
@@ -34,7 +34,7 @@ function NewContactModal({ isOpen, onClose, onContactSaved }) { // Accept onCont
     spouse_last_name: '',
     spouse_email: '',
     spouse_phone: '',
-    spouse_date_of_birth: '',
+    spouse_date_of_birth: null,
     company_name: '',
     relationship_type: 'employee',
     notes: ''
@@ -115,7 +115,7 @@ function NewContactModal({ isOpen, onClose, onContactSaved }) { // Accept onCont
       setFormData({
         firstName: '',
         lastName: '',
-        dateOfBirth: '',
+        dateOfBirth: null,
         gender: '',
         maritalStatus: '',
         language: 'English',
@@ -143,7 +143,7 @@ function NewContactModal({ isOpen, onClose, onContactSaved }) { // Accept onCont
         spouse_last_name: '',
         spouse_email: '',
         spouse_phone: '',
-        spouse_date_of_birth: '',
+        spouse_date_of_birth: null,
         company_name: '',
         relationship_type: 'employee'
       });

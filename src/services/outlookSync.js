@@ -1052,7 +1052,7 @@ export const getOutlookCalendarEvents = async (userEmail, startDate, endDate) =>
 
 // Sync Event to Outlook Calendar
 export const syncEventWithOutlook = async (userEmail, eventData) => {
-  console.log(`Creating`,userEmail);
+
   try {
     
     
@@ -1061,7 +1061,7 @@ export const syncEventWithOutlook = async (userEmail, eventData) => {
     
     // Parse and validate event date
     const eventDate = new Date(eventData.dueDate || eventData.eventDate);
-    console.log("eventDate___", eventDate);
+   
     if (isNaN(eventDate.getTime())) {
       throw new Error(`Invalid date format: ${eventData.dueDate || eventData.eventDate}`);
     }
@@ -1092,9 +1092,23 @@ export const syncEventWithOutlook = async (userEmail, eventData) => {
         content: `
           <div style="font-family: Arial, sans-serif;">
             <h3 style="color: #0078D4;">${eventData.title || eventData.eventText}</h3>
+            <p><strong>Date:</strong> ${startTime.toLocaleDateString('en-US', { 
+              weekday: 'long', 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric' 
+            })}</p>
+            <p><strong>Time:</strong> ${startTime.toLocaleTimeString('en-US', { 
+              hour: '2-digit', 
+              minute: '2-digit',
+              hour12: true 
+            })} - ${endTime.toLocaleTimeString('en-US', { 
+              hour: '2-digit', 
+              minute: '2-digit',
+              hour12: true 
+            })}</p>
             ${eventData.description ? `<p><strong>Description:</strong> ${eventData.description}</p>` : ''}
             ${eventData.location ? `<p><strong>Location:</strong> ${eventData.location}</p>` : ''}
-            ${eventData.priority ? `<p><strong>Priority:</strong> ${eventData.priority}</p>` : ''}
             <hr style="border: 1px solid #e1e1e1; margin: 10px 0;">
             <p style="color: #666; font-size: 12px;"><em>Created via CRM System</em></p>
           </div>
@@ -1104,18 +1118,27 @@ export const syncEventWithOutlook = async (userEmail, eventData) => {
       isReminderOn: true,
       reminderMinutesBeforeStart: eventData.reminderMinutes || 15,
       showAs: eventData.showAs || "busy",
-      importance: eventData.priority === "High" ? "high" : eventData.priority === "Low" ? "low" : "normal"
+      importance: eventData.priority === "High" ? "high" : eventData.priority === "Low" ? "low" : "normal",
+      // Add attendees if provided
+      ...(eventData.attendees && eventData.attendees.length > 0 && {
+        attendees: eventData.attendees
+      })
     };
     
     // Create event in Outlook
     const result = await client.api("/me/events").post(outlookEvent);
     console.log(`✅ Event created successfully: ${result.subject}`);
     
+    if (eventData.attendees && eventData.attendees.length > 0) {
+      console.log(`📧 Meeting invites sent to ${eventData.attendees.length} attendees`);
+    }
+    
     return {
       success: true,
       outlookEventId: result.id,
       webLink: result.webLink,
-      event: result
+      event: result,
+      attendeesCount: eventData.attendees ? eventData.attendees.length : 0
     };
     
   } catch (error) {

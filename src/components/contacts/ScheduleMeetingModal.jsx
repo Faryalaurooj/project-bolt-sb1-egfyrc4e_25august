@@ -185,26 +185,35 @@ function ScheduleMeetingModal({ isOpen, onClose, contact, onMeetingScheduled }) 
           try {
       
             
-            // Create the event data for Outlook calendar
+            // Create the event data for Outlook calendar with attendees
             const eventData = {
               title: formData.title,
               dueDate: new Date(`${formData.date}T${formData.time}`),
               description: formData.notes || `Meeting with ${contact.first_name || contact.firstName} ${contact.last_name || contact.lastName}`,
               location: formData.location || 'TBD',
               duration: parseInt(formData.duration),
-              priority: 'Normal'
+              priority: 'Normal',
+              attendees: [
+                {
+                  emailAddress: {
+                    address: contact.email,
+                    name: `${contact.first_name || contact.firstName} ${contact.last_name || contact.lastName}`.trim()
+                  },
+                  type: 'required'
+                }
+              ]
             };
             
           
             
-            const calendarResult = await syncEventWithOutlook(contact.email, eventData);
+            const calendarResult = await syncEventWithOutlook(loggedInUserOutlookEmail, eventData);
            
             
-            showSuccess('Meeting scheduled, email sent, and calendar event created successfully!');
+            showSuccess('Meeting scheduled, email sent, and meeting invite sent to contact!');
           } catch (calendarError) {
           
             // Enhanced error handling for calendar events
-            let errorMessage = `Email sent but failed to create calendar event: ${calendarError.message}`;
+            let errorMessage = `Email sent but failed to send meeting invite: ${calendarError.message}`;
             
             if (calendarError.message.includes('Authentication failed')) {
               errorMessage = `Email sent but calendar access failed. Please ensure you're logged in to your Outlook account and have granted calendar permissions.`;
@@ -255,7 +264,16 @@ function ScheduleMeetingModal({ isOpen, onClose, contact, onMeetingScheduled }) 
             description: formData.notes || `Meeting with ${contact.first_name || contact.firstName} ${contact.last_name || contact.lastName}`,
             location: formData.location || 'TBD',
             duration: parseInt(formData.duration),
-            priority: 'Normal'
+            priority: 'Normal',
+            attendees: [
+              {
+                emailAddress: {
+                  address: contact.email,
+                  name: `${contact.first_name || contact.firstName} ${contact.last_name || contact.lastName}`.trim()
+                },
+                type: 'required'
+              }
+            ]
           };
           
          
@@ -263,11 +281,11 @@ function ScheduleMeetingModal({ isOpen, onClose, contact, onMeetingScheduled }) 
           const calendarResult = await syncEventWithOutlook(loggedInUserOutlookEmail, eventData);
      
           
-          showSuccess('Meeting scheduled and calendar event created successfully!');
+          showSuccess('Meeting scheduled and meeting invite sent to contact!');
         } catch (calendarError) {
        
           // Enhanced error handling for calendar events
-          let errorMessage = `Meeting scheduled but failed to create calendar event: ${calendarError.message}`;
+          let errorMessage = `Meeting scheduled but failed to send meeting invite: ${calendarError.message}`;
           
           if (calendarError.message.includes('Authentication failed')) {
             errorMessage = `Meeting scheduled but calendar access failed. Please ensure you're logged in to your Outlook account and have granted calendar permissions.`;

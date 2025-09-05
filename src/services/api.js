@@ -269,7 +269,11 @@ export const getContacts = async () => {
     console.log('📞 getContacts: Starting fetch...');
     const { data, error } = await supabase
       .from('contacts')
-      .select('*, do_not_contact')
+      .select(`
+        *, 
+        do_not_contact,
+        policy_documents(id, file_name, file_type, created_at)
+      `)
       .order('created_at', { ascending: false });
       console.log("data___",data)
 

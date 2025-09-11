@@ -107,8 +107,18 @@ function NewContactModal({ isOpen, onClose, onContactSaved }) { // Accept onCont
 
       // Upload policy documents if any
       if (policyDocuments.length > 0) {
+        console.log('Uploading policy documents:', policyDocuments.length);
         for (const doc of policyDocuments) {
-          await createPolicyDocument(newContact.id, doc.file);
+          try {
+            console.log('Uploading document:', doc.file.name);
+            await createPolicyDocument(newContact.id, doc.file);
+            console.log('Document uploaded successfully:', doc.file.name);
+          } catch (docError) {
+            console.error('Failed to upload document:', doc.file.name, docError);
+            setError(`Failed to upload document "${doc.file.name}": ${docError.message}`);
+            setLoading(false);
+            return;
+          }
         }
       }
 
@@ -816,10 +826,13 @@ function NewContactModal({ isOpen, onClose, onContactSaved }) { // Accept onCont
                     <input
                       type="file"
                       onChange={(e) => {
-                        const file = e.target.files[0];
-                        if (file) {
-                          setPolicyDocuments([...policyDocuments, { file }]);
+                        const files = Array.from(e.target.files);
+                        if (files.length > 0) {
+                          const newDocuments = files.map(file => ({ file }));
+                          setPolicyDocuments([...policyDocuments, ...newDocuments]);
                         }
+                        // Reset the input so the same file can be selected again
+                        e.target.value = '';
                       }}
                       className="hidden"
                       accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png"

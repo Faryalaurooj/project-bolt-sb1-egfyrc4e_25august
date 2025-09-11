@@ -6,6 +6,7 @@ dotenv.config(); // Load environment variables from .env
 
 const environment = process.env.NODE_ENV || 'development';
 const config = knexfile[environment];
+console.log("process.env.DB_PASSWORD", process.env.DB_PASSWORD);
 
 const dbConfig = {
   host: config.connection.host,

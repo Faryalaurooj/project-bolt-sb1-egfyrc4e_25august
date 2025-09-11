@@ -263,7 +263,7 @@ router.get('/goto-connect/status/:gotoConnectId', async (req, res) => {
 });
 
 // Make GoTo Connect call via backend
-router.post('/goto-connect/make-call', async (req, res) => {
+router.post('/goto-connect/make-call1', async (req, res) => {
   try {
     const { phoneNumber, contactName, gotoConnectId } = req.body;
     

@@ -5,14 +5,14 @@ import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
 import { useAuth } from '../../context/AuthContext';
 import { createPhoneCall } from '../../services/api';
-import { makeGoToConnectCall, checkGoToConnectStatus } from '../../services/gotoConnectApi';
+import { makeWebRTCCall, endWebRTCCall, isWebRTCSupported, getWebRTCStatus, getCurrentCall } from '../../services/webrtcService';
+import CallControlPanel from './CallControlPanel';
 import ContactSelectModal from '../contacts/ContactSelectModal';
 import { useToast } from '../../hooks/useToast';
 
 function MakeCallModal({ isOpen, onClose, onCallSaved }) {
   const { user } = useAuth();
   const { showSuccess, showWarning, showError } = useToast();
-  const gotoConnectId = "1746414108925783783_EmUE8Fa0uujooXAG69vxVs6MkHh6L2Tk";
   
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
@@ -25,7 +25,9 @@ function MakeCallModal({ isOpen, onClose, onCallSaved }) {
   const [callOutcome, setCallOutcome] = useState('');
   const [callStartTime, setCallStartTime] = useState(null);
   const [isCallActive, setIsCallActive] = useState(false);
-  const [gotoConnectionStatus, setGotoConnectionStatus] = useState('checking');
+  const [webrtcStatus, setWebrtcStatus] = useState('checking');
+  const [webrtcSupported, setWebrtcSupported] = useState(false);
+  const [showCallControls, setShowCallControls] = useState(false);
 
   const modules = {
     toolbar: [
@@ -45,63 +47,46 @@ function MakeCallModal({ isOpen, onClose, onCallSaved }) {
     'Call back requested'
   ];
 
-  // GoTo Connect Integration Check
+  // WebRTC Support Check
   useEffect(() => {
-    if (gotoConnectId) {
-      checkGoToConnectIntegration();
-    } else {
-      setGotoConnectionStatus('no-credentials');
-    }
-  }, [gotoConnectId]);
+    checkWebRTCSupport();
+  }, []);
 
-  const checkGoToConnectIntegration = async () => {
+  const checkWebRTCSupport = async () => {
     try {
-      setGotoConnectionStatus('checking');
+      setWebrtcStatus('checking');
       
-      if (gotoConnectId) {
-        // Check GoTo Connect status via backend
-        const statusResult = await checkGoToConnectStatus(gotoConnectId);
-        
-        if (statusResult.status === 'connected' || statusResult.status === 'ready') {
-          setGotoConnectionStatus('connected');
-          console.log('✅ GoTo Connect integration ready via backend (no CORS)');
-        } else {
-          setGotoConnectionStatus('failed');
-          console.log('❌ GoTo Connect not accessible:', statusResult.error);
-          console.log('❌ Detailed error message:', statusResult.message);
-        }
+      if (isWebRTCSupported()) {
+        setWebrtcSupported(true);
+        setWebrtcStatus('supported');
+        console.log('✅ WebRTC is supported in this browser');
       } else {
-        setGotoConnectionStatus('no-credentials');
+        setWebrtcSupported(false);
+        setWebrtcStatus('not-supported');
+        console.log('❌ WebRTC is not supported in this browser');
       }
     } catch (error) {
-      console.error('❌ GoTo Connect check failed:', error);
-      setGotoConnectionStatus('failed');
+      console.error('❌ WebRTC support check failed:', error);
+      setWebrtcStatus('error');
     }
   };
 
-  // Make call using ONLY GoTo Connect API directly
-  const makeGoToCall = async (phoneNumber, contactName) => {
-    // if (!gotoConnectId) {
-    //   throw new Error('GoTo Connect not configured');
-    // }
-
+  // Make call using WebRTC via Jive API
+  const initiateWebRTCCall = async (phoneNumber, contactName) => {
     try {
-     
-      
-      // Only use GoTo Connect API - no fallbacks, no backend
-      console.log("gotoConnectId_makeGoToCall_", gotoConnectId);
-      const callResult = await makeGoToConnectCall(phoneNumber, contactName, gotoConnectId);
+      console.log("🌐 Making WebRTC call via Jive API...");
+      const callResult = await makeWebRTCCall(phoneNumber, contactName);
       
       if (callResult.success) {
-        console.log('✅ GoTo Connect call successful via direct API:', callResult);
+        console.log('✅ WebRTC call successful via Jive API:', callResult);
         return callResult;
       } else {
-        throw new Error('GoTo Connect API call failed');
+        throw new Error('WebRTC call failed');
       }
       
     } catch (error) {
-      console.error('❌ GoTo Connect API call failed:', error);
-      throw new Error(`GoTo Connect API failed: ${error.message}. Please check your API credentials and network connection.`);
+      console.error('❌ WebRTC call failed:', error);
+      throw new Error(`WebRTC call failed: ${error.message}. Please check your microphone permissions and network connection.`);
     }
   };
 
@@ -125,37 +110,40 @@ function MakeCallModal({ isOpen, onClose, onCallSaved }) {
     const contactName = selectedContact.name || `${selectedContact.first_name} ${selectedContact.last_name}`;
     
          try {
-               // Use GoTo Connect API via backend - no CORS issues
-        if (gotoConnectionStatus === 'connected' && gotoConnectId) {
-          console.log('📞 Making call via GoTo Connect API via backend...');
-          const callResult = await makeGoToCall(phoneNumber, contactName);
-          
-          // Call was successful via GoTo Connect API via backend
-          setTitle(`Call to ${contactName} (GoTo Connect Backend API)`);
-          setContent(`📞 Call initiated via GoTo Connect API via backend\n👤 Contact: ${contactName}\n📱 Phone: ${phoneNumber}\n⏰ Call started: ${startTime.toLocaleString()}\n🆔 GoTo Connect ID: ${gotoConnectId}\n🌐 Call Method: GoTo Connect Backend API (No CORS)\n\n--- Call Notes ---\n`);
-          
-          showSuccess('📞 Call initiated successfully via GoTo Connect Backend API!');
+      // Use WebRTC via Jive API
+      if (webrtcStatus === 'supported' && webrtcSupported) {
+        console.log('🌐 Making call via WebRTC Jive API...');
+        const callResult = await initiateWebRTCCall(phoneNumber, contactName);
+        
+        // Call was successful via WebRTC
+        setTitle(`Call to ${contactName} (WebRTC)`);
+        setContent(`🌐 Call initiated via WebRTC Jive API via Backend\n👤 Contact: ${contactName}\n📱 Phone: ${phoneNumber}\n⏰ Call started: ${startTime.toLocaleString()}\n🔧 Device ID: ${callResult.data?.deviceId || 'Generated'}\n🌐 Call Method: WebRTC Browser Calling (No CORS)\n\n--- Call Notes ---\n`);
+        
+        showSuccess('🌐 Call initiated successfully via WebRTC Backend!');
+        
+        // Show call controls
+        setShowCallControls(true);
+      } else {
+        // WebRTC not available - show specific error based on status
+        let errorMessage = '';
+        if (webrtcStatus === 'not-supported') {
+          errorMessage = 'WebRTC is not supported in this browser. Please use a modern browser like Chrome, Firefox, or Safari.';
+        } else if (webrtcStatus === 'error') {
+          errorMessage = 'WebRTC support check failed. Please refresh the page and try again.';
+        } else if (webrtcStatus === 'checking') {
+          errorMessage = 'WebRTC status is still being checked. Please wait and try again.';
         } else {
-          // GoTo Connect not available - show specific error based on status
-          let errorMessage = '';
-          if (gotoConnectionStatus === 'no-credentials') {
-            errorMessage = 'GoTo Connect ID not configured. Please contact your administrator.';
-          } else if (gotoConnectionStatus === 'failed') {
-            errorMessage = 'GoTo Connect API is not accessible via backend. This may be due to network issues or backend configuration.';
-          } else if (gotoConnectionStatus === 'checking') {
-            errorMessage = 'GoTo Connect status is still being checked. Please wait and try again.';
-          } else {
-            errorMessage = 'GoTo Connect not connected. Please check your API credentials and network connection.';
+          errorMessage = 'WebRTC is not available. Please check your browser support and microphone permissions.';
           }
           throw new Error(errorMessage);
         }
                    } catch (error) {
-        console.error('❌ GoTo Connect API call failed:', error);
-        setError(`GoTo Connect API call failed: ${error.message}`);
+      console.error('❌ WebRTC call failed:', error);
+      setError(`WebRTC call failed: ${error.message}`);
         
-        // GoTo Connect API via backend (no CORS issues)
+      // WebRTC call failed
         setTitle(`Call to ${contactName} (Failed)`);
-        setContent(`❌ Call failed via GoTo Connect Backend API\n👤 Contact: ${contactName}\n📱 Phone: ${phoneNumber}\n⏰ Attempted: ${startTime.toLocaleString()}\n🆔 GoTo Connect ID: ${gotoConnectId || 'Not configured'}\n🌐 Call Method: GoTo Connect Backend API (Failed)\n❌ Error: ${error.message}\n\n--- Call Notes ---\n`);
+      setContent(`❌ Call failed via WebRTC Jive API via Backend\n👤 Contact: ${contactName}\n📱 Phone: ${phoneNumber}\n⏰ Attempted: ${startTime.toLocaleString()}\n🌐 Call Method: WebRTC Browser Calling via Backend (Failed)\n❌ Error: ${error.message}\n\n--- Call Notes ---\n`);
       }
     
     // Start a timer to track call duration
@@ -170,17 +158,33 @@ function MakeCallModal({ isOpen, onClose, onCallSaved }) {
     setTimeout(() => clearInterval(timer), 3600000); // Clear after 1 hour max
   };
 
-  const handleEndCall = () => {
+  const handleEndCall = async () => {
     if (callStartTime) {
       const endTime = new Date();
       const durationMinutes = Math.floor((endTime - callStartTime) / 1000 / 60);
       setCallDuration(durationMinutes.toString());
       setIsCallActive(false);
       
+      // End WebRTC call
+      try {
+        await endWebRTCCall();
+        console.log('✅ WebRTC call ended successfully');
+      } catch (error) {
+        console.error('❌ Error ending WebRTC call:', error);
+      }
+      
       // Update content with call end time
       const endTimeText = `\n⏰ Call ended: ${endTime.toLocaleString()}\n⏱️ Duration: ${durationMinutes} minutes\n`;
       setContent(prev => prev + endTimeText);
+      
+      // Hide call controls
+      setShowCallControls(false);
     }
+  };
+
+  const handleCallEnded = () => {
+    setShowCallControls(false);
+    setIsCallActive(false);
   };
 
   const handleLogCall = async () => {
@@ -329,12 +333,12 @@ function MakeCallModal({ isOpen, onClose, onCallSaved }) {
                       <div className="space-y-3">
                         <button
                           onClick={handleCallNow}
-                          disabled={isCallActive || gotoConnectionStatus !== 'connected'}
+                          disabled={isCallActive || webrtcStatus !== 'supported'}
                           className="w-full flex items-center justify-center px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <FiPhone className="mr-2" />
                           {isCallActive ? 'Call in Progress...' : 
-                           gotoConnectionStatus !== 'connected' ? 'GoTo Connect Not Ready' :
+                           webrtcStatus !== 'supported' ? 'WebRTC Not Ready' :
                            `Call ${selectedContact.name || `${selectedContact.first_name} ${selectedContact.last_name}`}`}
                         </button>
                         
@@ -347,52 +351,58 @@ function MakeCallModal({ isOpen, onClose, onCallSaved }) {
                            </button>
                          )}
                          
-                                                   {/* GoTo Connect Status Display */}
+                                                   {/* WebRTC Status Display */}
                           <div className="text-center p-3 rounded-lg border">
-                            {gotoConnectionStatus === 'checking' && (
+                            {webrtcStatus === 'checking' && (
                               <div className="bg-yellow-50 border-yellow-200">
                                 <p className="text-xs text-yellow-700 font-medium">
-                                  🔍 Checking GoTo Connect status...
+                                  🔍 Checking WebRTC support...
                                 </p>
                                 <p className="text-xs text-yellow-600 mt-1">
-                                  Please wait while we verify the connection
+                                  Please wait while we verify browser compatibility
                                 </p>
                               </div>
                             )}
-                            {gotoConnectionStatus === 'connected' && (
+                            {webrtcStatus === 'supported' && (
                               <div className="bg-green-50 border-green-200">
                                 <p className="text-xs text-green-700 font-medium">
-                                  ✅ GoTo Connect ready
+                                  ✅ WebRTC ready
                                 </p>
                                 <p className="text-xs text-green-600 mt-1">
-                                  Backend API calls available (No CORS)
+                                  Browser calling via Jive API via Backend (No CORS)
                                 </p>
                               </div>
                             )}
-                            {gotoConnectionStatus === 'failed' && (
+                            {webrtcStatus === 'not-supported' && (
                               <div className="bg-red-50 border-red-200">
                                 <p className="text-xs text-red-700 font-medium">
-                                  ❌ GoTo Connect not accessible
+                                  ❌ WebRTC not supported
                                 </p>
                                 <p className="text-xs text-red-600 mt-1">
-                                  Backend API or network issues detected
+                                  Please use Chrome, Firefox, or Safari
                                 </p>
                                 <button
-                                  onClick={checkGoToConnectIntegration}
+                                  onClick={checkWebRTCSupport}
                                   className="text-xs text-red-600 hover:text-red-700 underline mt-1"
                                 >
-                                  Retry Connection
+                                  Retry Check
                                 </button>
                               </div>
                             )}
-                            {gotoConnectionStatus === 'no-credentials' && (
+                            {webrtcStatus === 'error' && (
                               <div className="bg-orange-50 border-orange-200">
                                 <p className="text-xs text-orange-700 font-medium">
-                                  ⚠️ GoTo Connect ID not configured
+                                  ⚠️ WebRTC check failed
                                 </p>
                                 <p className="text-xs text-orange-600 mt-1">
-                                  Contact your administrator
+                                  Please refresh the page and try again
                                 </p>
+                                <button
+                                  onClick={checkWebRTCSupport}
+                                  className="text-xs text-orange-600 hover:text-orange-700 underline mt-1"
+                                >
+                                  Retry Check
+                                </button>
                               </div>
                             )}
                           </div>
@@ -503,6 +513,11 @@ function MakeCallModal({ isOpen, onClose, onCallSaved }) {
         onClose={() => setIsContactSelectOpen(false)}
         onContactSelect={handleContactSelect}
       />
+
+      {/* Call Control Panel */}
+      {showCallControls && (
+        <CallControlPanel onCallEnded={handleCallEnded} />
+      )}
     </>
   );
 }

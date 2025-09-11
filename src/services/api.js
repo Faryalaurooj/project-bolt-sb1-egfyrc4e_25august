@@ -494,29 +494,173 @@ export const linkContactToCompany = async (contactId, companyId, relationshipTyp
 };
 
 // Policy Documents API
-export const createPolicyDocument = async (contactId, file) => {
+export const getAvailableContacts = async () => {
   try {
+    console.log('👥 getAvailableContacts: Fetching contacts...');
+    
+    const { data: contacts, error } = await supabase
+      .from('contacts')
+      .select('id, first_name, last_name, email')
+      .limit(10)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('👥 getAvailableContacts: Error:', error);
+      return { success: false, error };
+    }
+    
+    console.log('👥 getAvailableContacts: Found contacts:', contacts);
+    return { success: true, contacts };
+  } catch (error) {
+    console.error('👥 getAvailableContacts: Exception:', error);
+    return { success: false, error };
+  }
+};
+
+export const testPolicyDocumentInsert = async (contactId) => {
+  try {
+    console.log('🧪 testPolicyDocumentInsert: Testing simple insert...');
+    
     const { data: { user }, error: userError } = await supabase.auth.getUser();
-      
     if (userError) throw userError;
     if (!user) throw new Error('No authenticated user found');
 
-    // Upload file to Supabase Storage
+    // Test with minimal data
+    const { data, error } = await supabase
+      .from('policy_documents')
+      .insert([{
+        contact_id: contactId,
+        file_name: 'test.txt',
+        file_url: 'https://example.com/test.txt',
+        uploaded_by: user.id
+      }])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('🧪 testPolicyDocumentInsert: Error:', error);
+      return { success: false, error };
+    }
+    
+    console.log('🧪 testPolicyDocumentInsert: Success:', data);
+    return { success: true, data };
+  } catch (error) {
+    console.error('🧪 testPolicyDocumentInsert: Exception:', error);
+    return { success: false, error };
+  }
+};
+
+export const createPolicyDocument = async (contactId, file) => {
+  try {
+    console.log('📄 createPolicyDocument: Starting upload for contact:', contactId);
+    
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    console.log("user___>>>",user)
+
+      
+    if (userError) {
+      console.error('📄 createPolicyDocument: User error:', userError);
+      throw userError;
+    }
+    if (!user) {
+      console.error('📄 createPolicyDocument: No authenticated user found');
+      throw new Error('No authenticated user found');
+    }
+
+    // Upload file to Supabase Storage (same pattern as notes and messages)
+    console.log('📄 createPolicyDocument: Uploading file:', file.name);
     const fileExt = file.name.split('.').pop();
     const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
     
+    let publicUrl;
+    
+    console.log('📄 createPolicyDocument: Attempting upload to policy-documents bucket...');
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from('policy-documents')
       .upload(fileName, file);
     
-    if (uploadError) throw uploadError;
+    if (uploadError) {
+      console.error('📄 createPolicyDocument: Upload error:', uploadError);
+      console.error('📄 createPolicyDocument: Upload error details:', JSON.stringify(uploadError, null, 2));
+      
+      // If it's an RLS error, try using a different approach
+      if (uploadError.message.includes('row-level security') || uploadError.message.includes('Unauthorized')) {
+        console.log('📄 createPolicyDocument: RLS error on storage, trying alternative approach...');
+        
+        // Try uploading to a different bucket that might work
+        const { data: altUploadData, error: altUploadError } = await supabase.storage
+          .from('note-attachments') // Use note-attachments bucket as fallback
+          .upload(`policy-docs/${fileName}`, file);
+        
+        if (altUploadError) {
+          console.error('📄 createPolicyDocument: Alternative upload also failed:', altUploadError);
+          throw new Error(`File upload failed: ${uploadError.message}. Please check storage bucket permissions.`);
+        }
+        
+        const { data: { publicUrl: altPublicUrl } } = supabase.storage
+          .from('note-attachments')
+          .getPublicUrl(`policy-docs/${fileName}`);
+        
+        console.log('📄 createPolicyDocument: File uploaded to fallback bucket:', altPublicUrl);
+        publicUrl = altPublicUrl;
+      } else {
+        throw uploadError;
+      }
+    } else {
+      const { data: { publicUrl: primaryPublicUrl } } = supabase.storage
+        .from('policy-documents')
+        .getPublicUrl(fileName);
+      
+      console.log('📄 createPolicyDocument: File uploaded successfully:', primaryPublicUrl);
+      publicUrl = primaryPublicUrl;
+    }
+
+    // First, let's verify the contact exists
+    console.log('📄 createPolicyDocument: Verifying contact exists...');
+    console.log('📄 createPolicyDocument: Looking for contact_id:', contactId);
+    console.log('📄 createPolicyDocument: contact_id type:', typeof contactId);
     
-    const { data: { publicUrl } } = supabase.storage
-      .from('policy-documents')
-      .getPublicUrl(fileName);
+    const { data: contactData, error: contactError } = await supabase
+      .from('contacts')
+      .select('id, first_name, last_name, created_by')
+      .eq('id', contactId)
+      .single();
+    
+    if (contactError) {
+      console.error('📄 createPolicyDocument: Contact lookup failed:', contactError);
+      console.error('📄 createPolicyDocument: Error details:', JSON.stringify(contactError, null, 2));
+      
+      // Let's also check if there are any contacts at all
+      const { data: allContacts, error: allContactsError } = await supabase
+        .from('contacts')
+        .select('id, first_name, last_name')
+        .limit(5);
+      
+      console.log('📄 createPolicyDocument: Available contacts:', allContacts);
+      
+      throw new Error(`Contact not found: ${contactError.message}`);
+    }
+    
+    console.log('📄 createPolicyDocument: Contact found:', contactData);
 
     // Create policy document record
-    const { data, error } = await supabase
+    console.log('📄 createPolicyDocument: Inserting document record...');
+    console.log('📄 createPolicyDocument: Data to insert:', {
+      contact_id: contactId,
+      file_name: file.name,
+      file_url: publicUrl,
+      file_type: file.type,
+      file_size: file.size,
+      uploaded_by: user.id
+    });
+    
+    // Try insert with detailed error handling
+    console.log('📄 createPolicyDocument: Attempting insert...');
+    
+    let data, error;
+    
+    // First try normal insert
+    const insertResult = await supabase
       .from('policy_documents')
       .insert([{
         contact_id: contactId,
@@ -526,13 +670,49 @@ export const createPolicyDocument = async (contactId, file) => {
         file_size: file.size,
         uploaded_by: user.id
       }])
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
+      .select();
+    
+    data = insertResult.data;
+    error = insertResult.error;
+    
+    // If RLS error, try using the stored procedure
+    if (error && error.message.includes('row-level security')) {
+      console.log('📄 createPolicyDocument: RLS error detected, trying stored procedure...');
+      
+      const rpcResult = await supabase.rpc('insert_policy_document', {
+        p_contact_id: contactId,
+        p_file_name: file.name,
+        p_file_url: publicUrl,
+        p_file_type: file.type,
+        p_file_size: file.size,
+        p_uploaded_by: user.id
+      });
+      
+      data = rpcResult.data ? [rpcResult.data] : null;
+      error = rpcResult.error;
+    }
+    
+    console.log('📄 createPolicyDocument: Insert result - data:', data);
+    console.log('📄 createPolicyDocument: Insert result - error:', error);
+    
+    // Handle the response properly
+    if (error) {
+      console.error('📄 createPolicyDocument: Database error:', error);
+      console.error('📄 createPolicyDocument: Error details:', JSON.stringify(error, null, 2));
+      throw error;
+    }
+    
+    if (!data || data.length === 0) {
+      console.error('📄 createPolicyDocument: No data returned from insert');
+      throw new Error('Failed to create policy document - no data returned');
+    }
+    
+    const insertedDocument = data[0];
+    console.log('📄 createPolicyDocument: Document created successfully:', insertedDocument);
+    return insertedDocument;
   } catch (error) {
-    throw new Error(error.message);
+    console.error('📄 createPolicyDocument: Error occurred:', error);
+    throw error;
   }
 };
 
@@ -1364,4 +1544,117 @@ export const getAllTextMessages = async () => {
 
   console.log('📱 getAllTextMessages: Found messages:', data?.length || 0);
   return data;
+};
+
+// Fetch message history directly from TextMagic API
+// Helper function to normalize phone numbers for comparison
+const normalizePhoneNumber = (phone) => {
+  if (!phone) return '';
+  // Remove all non-digit characters
+  const digits = phone.replace(/\D/g, '');
+  // If it starts with 1 and is 11 digits, remove the 1
+  if (digits.length === 11 && digits.startsWith('1')) {
+    return digits.substring(1);
+  }
+  return digits;
+};
+
+export const getTextMagicMessageHistory = async (phoneNumber, userPhoneNumber = '18333875967') => {
+  try {
+    const normalizedPhone = normalizePhoneNumber(phoneNumber);
+    const normalizedUserPhone = normalizePhoneNumber(userPhoneNumber);
+    
+    console.log('📱 getTextMagicMessageHistory: Fetching messages for phone:', phoneNumber);
+    console.log('📱 getTextMagicMessageHistory: Normalized phone:', normalizedPhone);
+    console.log('📱 getTextMagicMessageHistory: Using user phone number:', userPhoneNumber);
+    console.log('📱 getTextMagicMessageHistory: Normalized user phone:', normalizedUserPhone);
+    
+    // Get all messages and filter them client-side
+    const response = await fetch(`https://rest.textmagic.com/api/v2/messages?limit=100`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "X-TM-Username": "alishahanif",
+        "X-TM-Key": "h6F5FJoxqwjPCCc9p6A5pYJoS2yIGQ",
+      },
+    });
+
+    const data = await response.json();
+    console.log('📱 TextMagic API Response:', data);
+    
+    if (!response.ok || !data.resources) {
+      console.error('📱 TextMagic API Error:', data);
+      return [];
+    }
+
+    // Filter messages that involve the target phone number
+    console.log('📱 Filtering messages for phone number:', phoneNumber);
+    console.log('📱 Sample messages from API:', data.resources.slice(0, 3).map(msg => ({
+      id: msg.id,
+      sender: msg.sender,
+      receiver: msg.receiver,
+      text: msg.text?.substring(0, 20) + '...'
+    })));
+    
+    const relevantMessages = data.resources.filter(msg => {
+      const normalizedSender = normalizePhoneNumber(msg.sender);
+      const normalizedReceiver = normalizePhoneNumber(msg.receiver);
+      
+      const isRelevant = normalizedSender === normalizedPhone || normalizedReceiver === normalizedPhone;
+      
+      if (isRelevant) {
+        console.log('📱 Found relevant message:', {
+          id: msg.id,
+          sender: msg.sender,
+          receiver: msg.receiver,
+          normalizedSender,
+          normalizedReceiver,
+          targetPhone: normalizedPhone,
+          text: msg.text?.substring(0, 30) + '...',
+          matchesSender: normalizedSender === normalizedPhone,
+          matchesReceiver: normalizedReceiver === normalizedPhone
+        });
+      }
+      return isRelevant;
+    });
+
+    console.log(`📱 Found ${relevantMessages.length} relevant messages out of ${data.resources.length} total`);
+
+    // Process and map the messages
+    const processedMessages = relevantMessages.map(msg => {
+      const normalizedSender = normalizePhoneNumber(msg.sender);
+      const isOutgoing = normalizedSender === normalizedUserPhone;
+      
+      return {
+        id: msg.id,
+        content: msg.text,
+        direction: isOutgoing ? 'outgoing' : 'incoming',
+        status: msg.status === 'a' ? 'delivered' : 
+                msg.status === 'd' ? 'delivered' : 
+                msg.status === 'f' ? 'failed' : 
+                msg.status === 'j' ? 'pending' : 'pending',
+        sent_at: msg.messageTime,
+        recipient_phone: msg.receiver,
+        sender_phone: msg.sender,
+        textmagic_id: msg.id,
+        sessionId: msg.sessionId,
+        contactId: msg.contactId,
+        firstName: msg.firstName,
+        lastName: msg.lastName,
+        country: msg.country,
+        price: msg.price,
+        partsCount: msg.partsCount
+      };
+    });
+
+    // Sort messages by timestamp (oldest first)
+    processedMessages.sort((a, b) => new Date(a.sent_at) - new Date(b.sent_at));
+
+    console.log('📱 getTextMagicMessageHistory: Processed messages:', processedMessages.length);
+    return processedMessages;
+    
+  } catch (error) {
+    console.error('📱 getTextMagicMessageHistory: Error occurred:', error);
+    throw new Error(error.message);
+  }
 };

@@ -52,7 +52,7 @@ router.post("/send-text", async (req, res) => {
   }
 });
 
-// Get text message history for a contact
+// Get text message history for a contact (legacy - now uses TextMagic)
 router.get("/history/contact/:contactId", authenticateToken, async (req, res) => {
   try {
     // This will be handled by Supabase directly from frontend

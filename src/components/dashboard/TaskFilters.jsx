@@ -23,7 +23,7 @@ function TaskFilters({ filters, onFilterChange, projects, assignees }) {
       </div>
 
       <div className="flex space-x-4">
-        <div>
+        {/* <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Project</label>
           <select
             value={filters.project}
@@ -35,7 +35,7 @@ function TaskFilters({ filters, onFilterChange, projects, assignees }) {
               <option key={project} value={project}>{project}</option>
             ))}
           </select>
-        </div>
+        </div> */}
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>

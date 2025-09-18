@@ -1,255 +1,471 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Dialog } from '@headlessui/react';
-import { FiX, FiCalendar, FiClock, FiUser, FiMail, FiSave } from 'react-icons/fi';
-import { syncMeetingWithOutlook, sendOutlookEmail } from '../../services/outlookSync';
-import { createCalendarEvent } from '../../services/api';
+import { FiX, FiCalendar, FiClock, FiMapPin, FiMail, FiUser } from 'react-icons/fi';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../hooks/useToast';
+import { getUsers } from '../../services/api';
+import { sendOutlookEmail, syncEventWithOutlook } from '../../services/outlookSync';
 
 function ScheduleMeetingModal({ isOpen, onClose, contact, onMeetingScheduled }) {
   const { user } = useAuth();
-  const [meetingData, setMeetingData] = useState({
-    subject: '',
+  const { showSuccess, showError } = useToast();
+  
+  const [formData, setFormData] = useState({
+    title: '',
     date: '',
     time: '',
-    duration: '30',
+    location: '',
     notes: '',
-    location: ''
+    duration: '60'
   });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loggedInUserOutlookEmail, setLoggedInUserOutlookEmail] = useState(null);
+  const [isLoadingUserData, setIsLoadingUserData] = useState(false);
 
-  const handleChange = (e) => {
+  // Fetch logged-in user's Outlook email when modal opens
+  useEffect(() => {
+    const fetchLoggedInUserOutlookEmail = async () => {
+      if (!user?.id) return;
+      
+      setIsLoadingUserData(true);
+      try {
+        
+        const users = await getUsers();
+        
+        
+        // Find the logged-in user by ID
+        const loggedInUser = users.find(u => u.id === user.id);
+        
+        
+        if (loggedInUser?.outlook_email) {
+          setLoggedInUserOutlookEmail(loggedInUser.outlook_email);
+        
+        } else {
+       
+          setLoggedInUserOutlookEmail(null);
+        }
+      } catch (error) {
+       
+        setLoggedInUserOutlookEmail(null);
+      } finally {
+        setIsLoadingUserData(false);
+      }
+    };
+
+    if (isOpen && user?.id) {
+      fetchLoggedInUserOutlookEmail();
+    }
+  }, [isOpen, user?.id]);
+
+  const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setMeetingData(prev => ({
+    setFormData(prev => ({
       ...prev,
       [name]: value
     }));
   };
 
-  const handleScheduleMeeting = async () => {
-    if (!meetingData.subject || !meetingData.date || !meetingData.time) {
-      setError('Please fill in all required fields');
+    const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    if (!formData.title || !formData.date || !formData.time) {
+      showError('Please fill in all required fields');
       return;
     }
 
-    if (!contact?.email) {
-      setError('Contact does not have an email address');
+    if (!loggedInUserOutlookEmail) {
+      showError('Outlook email not found for logged-in user. Please check your profile settings.');
       return;
     }
 
-    setLoading(true);
-    setError('');
-
+    setIsSubmitting(true);
+    
     try {
-      // Combine date and time
-      const meetingDateTime = new Date(`${meetingData.date}T${meetingData.time}`);
-      const endDateTime = new Date(meetingDateTime.getTime() + (parseInt(meetingData.duration) * 60000));
+      const meetingData = {
+        ...formData,
+        contactId: contact.id,
+        contactName: `${contact.first_name || contact.firstName} ${contact.last_name || contact.lastName}`,
+        contactEmail: contact.email,
+        scheduledBy: user?.first_name || user?.email || 'Unknown',
+        scheduledByEmail: loggedInUserOutlookEmail
+      };
 
-      // Create calendar event in CRM
-      await createCalendarEvent({
-        event_text: `Meeting: ${meetingData.subject} with ${contact.first_name} ${contact.last_name}`,
-        event_date: meetingData.date,
-        color: '#10B981' // Green color for meetings
-      });
+   
 
-      // Sync with Outlook calendar if available
-      try {
-        await syncMeetingWithOutlook({
-          subject: meetingData.subject,
-          startDateTime: meetingDateTime,
-          endDateTime: endDateTime,
-          attendeeEmail: contact.email,
-          location: meetingData.location,
-          notes: meetingData.notes,
-          contactName: `${contact.first_name} ${contact.last_name}`
-        });
-        console.log('Meeting synced with Outlook successfully');
-      } catch (outlookError) {
-        console.warn('Failed to sync with Outlook:', outlookError);
-        // Continue even if Outlook sync fails
+      // Send email via Outlook if contact has email
+      if (contact.email && loggedInUserOutlookEmail) {
+        try {
+         
+          
+          const emailSubject = `Meeting Scheduled - ${formData.title}`;
+          const emailBody = `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; text-align: center;">
+                <h2 style="color: white; margin: 0;">Meeting Scheduled</h2>
+              </div>
+              
+              <div style="padding: 30px; background: #f8f9fa;">
+                <p style="font-size: 16px; color: #333; margin-bottom: 20px;">
+                  Hello ${contact.first_name || contact.firstName} ${contact.last_name || contact.lastName},
+                </p>
+                
+                <p style="font-size: 16px; color: #333; margin-bottom: 20px;">
+                  We have scheduled a meeting with you. Here are the details:
+                </p>
+                
+                <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px;">
+                  <h3 style="color: #667eea; margin-top: 0;">Meeting Details</h3>
+                  <ul style="list-style: none; padding: 0;">
+                    <li style="margin-bottom: 10px; padding: 8px 0; border-bottom: 1px solid #eee;">
+                      <strong style="color: #333;">📅 Date:</strong> 
+                      <span style="color: #666;">${new Date(formData.date).toLocaleDateString('en-US', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+                      })}</span>
+                    </li>
+                    <li style="margin-bottom: 10px; padding: 8px 0; border-bottom: 1px solid #eee;">
+                      <strong style="color: #333;">🕐 Time:</strong> 
+                      <span style="color: #666;">${formData.time}</span>
+                    </li>
+                    <li style="margin-bottom: 10px; padding: 8px 0; border-bottom: 1px solid #eee;">
+                      <strong style="color: #333;">📋 Subject:</strong> 
+                      <span style="color: #666;">${formData.title}</span>
+                    </li>
+                    <li style="margin-bottom: 10px; padding: 8px 0; border-bottom: 1px solid #eee;">
+                      <strong style="color: #333;">📍 Location:</strong> 
+                      <span style="color: #666;">${formData.location || 'TBD'}</span>
+                    </li>
+                    <li style="margin-bottom: 10px; padding: 8px 0; border-bottom: 1px solid #eee;">
+                      <strong style="color: #333;">⏱️ Duration:</strong> 
+                      <span style="color: #666;">${formData.duration} minutes</span>
+                    </li>
+                    ${formData.notes ? `
+                    <li style="margin-bottom: 10px; padding: 8px 0;">
+                      <strong style="color: #333;">📝 Notes:</strong> 
+                      <span style="color: #666;">${formData.notes}</span>
+                    </li>
+                    ` : ''}
+                  </ul>
+                </div>
+                
+                <p style="font-size: 14px; color: #666; margin-bottom: 20px;">
+                  Please let us know if you need to reschedule or if you have any questions.
+                </p>
+                
+                <div style="text-align: center; padding: 20px; background: #e9ecef; border-radius: 8px;">
+                  <p style="margin: 0; color: #666; font-size: 14px;">
+                    Best regards,<br>
+                    <strong style="color: #333;">${user?.first_name || user?.email || 'CRM Team'}</strong><br>
+                    <span style="color: #667eea;">${loggedInUserOutlookEmail}</span>
+                  </p>
+                </div>
+              </div>
+              
+              <div style="background: #f8f9fa; padding: 15px; text-align: center; border-top: 1px solid #dee2e6;">
+                <p style="margin: 0; color: #6c757d; font-size: 12px;">
+                  This email was sent from your CRM system
+                </p>
+              </div>
+            </div>
+          `;
+
+        
+          await sendOutlookEmail(loggedInUserOutlookEmail, {
+            to: contact.email,
+            subject: emailSubject,
+            body: emailBody,
+            isHtml: true
+          });
+
+         
+          
+          // Now create the calendar event
+          try {
+      
+            
+            // Create the event data for Outlook calendar with attendees
+            const eventData = {
+              title: formData.title,
+              dueDate: new Date(`${formData.date}T${formData.time}`),
+              description: formData.notes || `Meeting with ${contact.first_name || contact.firstName} ${contact.last_name || contact.lastName}`,
+              location: formData.location || 'TBD',
+              duration: parseInt(formData.duration),
+              priority: 'Normal',
+              attendees: [
+                {
+                  emailAddress: {
+                    address: contact.email,
+                    name: `${contact.first_name || contact.firstName} ${contact.last_name || contact.lastName}`.trim()
+                  },
+                  type: 'required'
+                }
+              ]
+            };
+            
+          
+            
+            const calendarResult = await syncEventWithOutlook(loggedInUserOutlookEmail, eventData);
+           
+            
+            showSuccess('Meeting scheduled, email sent, and meeting invite sent to contact!');
+          } catch (calendarError) {
+          
+            // Enhanced error handling for calendar events
+            let errorMessage = `Email sent but failed to send meeting invite: ${calendarError.message}`;
+            
+            if (calendarError.message.includes('Authentication failed')) {
+              errorMessage = `Email sent but calendar access failed. Please ensure you're logged in to your Outlook account and have granted calendar permissions.`;
+            } else if (calendarError.message.includes('Permission denied') || calendarError.message.includes('admin consent') || calendarError.message.includes('admin approval')) {
+              errorMessage = `Email sent but calendar permission denied. Your IT administrator needs to grant "Calendars.ReadWrite" permission to this app. Please contact your administrator or ask them to visit the Azure Portal to grant admin consent.`;
+            } else if (calendarError.message.includes('Invalid date')) {
+              errorMessage = `Email sent but invalid meeting date/time. Please check the date and time format.`;
+            } else if (calendarError.message.includes('Rate limit')) {
+              errorMessage = `Email sent but calendar rate limit exceeded. Please wait a moment and try again.`;
+            } else if (calendarError.message.includes('unverified') || calendarError.message.includes('organization')) {
+              errorMessage = `Email sent but admin approval required. Please contact your IT administrator to grant permission to this app in Azure AD.`;
+            }
+            
+            showError(errorMessage);
+          }
+        } catch (emailError) {
+       
+          
+          // Enhanced error handling for different types of email failures
+          let errorMessage = `Meeting scheduled but failed to send email: ${emailError.message}`;
+          
+          if (emailError.message.includes('AADSTS') || emailError.message.includes('authentication')) {
+            errorMessage = `Authentication failed. Please ensure your Outlook account (${loggedInUserOutlookEmail}) is properly configured and you have granted the necessary permissions.`;
+          } else if (emailError.message.includes('consent') || emailError.message.includes('permission')) {
+            errorMessage = `Permission denied. Please ensure the application has Mail.Send permission for your Outlook account.`;
+          } else if (emailError.message.includes('tenant') || emailError.message.includes('organization')) {
+            errorMessage = `Organization/tenant issue. Please contact your IT administrator to configure the application for your domain.`;
+          } else if (emailError.message.includes('invalid') && emailError.message.includes('email')) {
+            errorMessage = `Invalid email address format. Please check the contact's email address: ${contact.email}`;
+          } else if (emailError.message.includes('quota') || emailError.message.includes('limit')) {
+            errorMessage = `Email sending quota exceeded. Please try again later.`;
+          } else if (emailError.message.includes('network') || emailError.message.includes('timeout')) {
+            errorMessage = `Network error. Please check your internet connection and try again.`;
+          }
+          
+          showError(errorMessage);
+        }
+      } else {
+       
+        
+        // Still create calendar event even if no email
+        try {
+     
+          
+          const eventData = {
+            title: formData.title,
+            dueDate: new Date(`${formData.date}T${formData.time}`),
+            description: formData.notes || `Meeting with ${contact.first_name || contact.firstName} ${contact.last_name || contact.lastName}`,
+            location: formData.location || 'TBD',
+            duration: parseInt(formData.duration),
+            priority: 'Normal',
+            attendees: [
+              {
+                emailAddress: {
+                  address: contact.email,
+                  name: `${contact.first_name || contact.firstName} ${contact.last_name || contact.lastName}`.trim()
+                },
+                type: 'required'
+              }
+            ]
+          };
+          
+         
+          
+          const calendarResult = await syncEventWithOutlook(loggedInUserOutlookEmail, eventData);
+     
+          
+          showSuccess('Meeting scheduled and meeting invite sent to contact!');
+        } catch (calendarError) {
+       
+          // Enhanced error handling for calendar events
+          let errorMessage = `Meeting scheduled but failed to send meeting invite: ${calendarError.message}`;
+          
+          if (calendarError.message.includes('Authentication failed')) {
+            errorMessage = `Meeting scheduled but calendar access failed. Please ensure you're logged in to your Outlook account and have granted calendar permissions.`;
+          } else if (calendarError.message.includes('Permission denied') || calendarError.message.includes('admin consent') || calendarError.message.includes('admin approval')) {
+            errorMessage = `Meeting scheduled but calendar permission denied. Your IT administrator needs to grant "Calendars.ReadWrite" permission to this app. Please contact your administrator or ask them to visit the Azure Portal to grant admin consent.`;
+          } else if (calendarError.message.includes('Invalid date')) {
+            errorMessage = `Meeting scheduled but invalid meeting date/time. Please check the date and time format.`;
+          } else if (calendarError.message.includes('Rate limit')) {
+            errorMessage = `Meeting scheduled but calendar rate limit exceeded. Please wait a moment and try again.`;
+          } else if (calendarError.message.includes('unverified') || calendarError.message.includes('organization')) {
+            errorMessage = `Meeting scheduled but admin approval required. Please contact your IT administrator to grant permission to this app in Azure AD.`;
+          }
+          
+          showError(errorMessage);
+        }
       }
 
-      // Send email to contact
-      const emailSubject = `Meeting Scheduled: ${meetingData.subject}`;
-      const emailBody = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #2563eb;">Meeting Scheduled</h2>
-          
-          <p>Dear ${contact.first_name},</p>
-          
-          <p>I hope this email finds you well. I wanted to confirm that we have scheduled a meeting with the following details:</p>
-          
-          <div style="background-color: #f3f4f6; padding: 20px; border-radius: 8px; margin: 20px 0;">
-            <h3 style="margin-top: 0; color: #374151;">Meeting Details</h3>
-            <p><strong>Subject:</strong> ${meetingData.subject}</p>
-            <p><strong>Date:</strong> ${new Date(meetingDateTime).toLocaleDateString('en-US', { 
-              weekday: 'long', 
-              year: 'numeric', 
-              month: 'long', 
-              day: 'numeric' 
-            })}</p>
-            <p><strong>Time:</strong> ${new Date(meetingDateTime).toLocaleTimeString('en-US', { 
-              hour: 'numeric', 
-              minute: '2-digit',
-              hour12: true 
-            })}</p>
-            <p><strong>Duration:</strong> ${meetingData.duration} minutes</p>
-            ${meetingData.location ? `<p><strong>Location:</strong> ${meetingData.location}</p>` : ''}
-            ${meetingData.notes ? `<p><strong>Notes:</strong> ${meetingData.notes}</p>` : ''}
-          </div>
-          
-          <p>Please let me know if you need to reschedule or if you have any questions.</p>
-          
-          <p>Looking forward to our meeting!</p>
-          
-          <p>Best regards,<br>
-          ${user?.first_name || user?.email?.split('@')[0] || 'Your Agent'}</p>
-        </div>
-      `;
-
-      try {
-        await sendOutlookEmail(contact.email, emailSubject, emailBody);
-        console.log('Meeting confirmation email sent successfully');
-      } catch (emailError) {
-        console.warn('Failed to send email via Outlook, falling back to mailto:', emailError);
-        // Fallback to mailto link
-        const mailtoLink = `mailto:${contact.email}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody.replace(/<[^>]*>/g, ''))}`;
-        window.open(mailtoLink, '_blank');
-      }
+      // Call the parent component's handler
+      await onMeetingScheduled(meetingData);
 
       // Reset form
-      setMeetingData({
-        subject: '',
+      setFormData({
+        title: '',
         date: '',
         time: '',
-        duration: '30',
+        location: '',
         notes: '',
-        location: ''
+        duration: '60'
       });
-
-      alert('Meeting scheduled successfully! Calendar event created and email sent to contact.');
-      
-      if (onMeetingScheduled) {
-        onMeetingScheduled();
-      }
       
       onClose();
-    } catch (err) {
-      console.error('Error scheduling meeting:', err);
-      setError('Failed to schedule meeting. Please try again.');
+    } catch (error) {
+     
+      showError('Failed to schedule meeting. Please try again.');
     } finally {
-      setLoading(false);
+      setIsSubmitting(false);
     }
+  };
+
+  const handleClose = () => {
+    setFormData({
+      title: '',
+      date: '',
+      time: '',
+      location: '',
+      notes: '',
+      duration: '60'
+    });
+    onClose();
   };
 
   return (
     <Dialog
       open={isOpen}
-      onClose={onClose}
-      className="fixed inset-0 z-60 overflow-y-auto"
+      onClose={handleClose}
+      className="fixed inset-0 z-50 overflow-y-auto"
     >
       <div className="flex min-h-screen items-center justify-center">
         <Dialog.Overlay className="fixed inset-0 bg-black opacity-30" />
 
         <div className="relative bg-white w-full max-w-2xl mx-4 rounded-lg shadow-xl">
-          <div className="flex justify-between items-center p-6 border-b bg-gradient-to-r from-green-50 to-emerald-50">
+          <div className="flex justify-between items-center p-6 border-b">
             <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                <FiCalendar className="w-5 h-5 text-green-600" />
+              <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                <FiCalendar className="w-5 h-5 text-purple-600" />
               </div>
               <div>
                 <Dialog.Title className="text-xl font-semibold text-gray-900">
                   Schedule Meeting
                 </Dialog.Title>
                 <p className="text-sm text-gray-600">
-                  with {contact?.first_name} {contact?.last_name}
+                  with {contact?.first_name || contact?.firstName} {contact?.last_name || contact?.lastName}
                 </p>
               </div>
             </div>
             <button
-              onClick={onClose}
+              onClick={handleClose}
               className="text-gray-400 hover:text-gray-500"
             >
               <FiX className="w-6 h-6" />
             </button>
           </div>
 
-          <div className="p-6">
-            {error && (
-              <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-md">
-                {error}
+          <form onSubmit={handleSubmit} className="p-6">
+            <div className="space-y-6">
+              {/* Contact Info */}
+              <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                <div className="flex items-center space-x-3">
+                  <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                    <span className="text-xs font-medium text-blue-600">
+                      {(contact?.first_name || contact?.firstName)?.[0]}{(contact?.last_name || contact?.lastName)?.[0]}
+                    </span>
+                  </div>
+                  <div>
+                    <div className="font-medium text-gray-900">
+                      {contact?.first_name || contact?.firstName} {contact?.last_name || contact?.lastName}
+                    </div>
+                    <div className="text-sm text-gray-600 space-y-1">
+                      {contact?.email && (
+                        <span className="flex items-center">
+                          <FiMail className="w-4 h-4 mr-1" />
+                          {contact.email}
+                        </span>
+                      )}
+                      {(contact?.phone || contact?.cell_number || contact?.home_phone_number) && (
+                        <span className="flex items-center">
+                          <FiUser className="w-4 h-4 mr-1" />
+                          {contact.phone || contact.cell_number || contact.home_phone_number}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
-            )}
 
-            <div className="space-y-4">
+              {/* Meeting Title */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Meeting Subject *
+                  Meeting Title *
                 </label>
                 <input
                   type="text"
-                  name="subject"
-                  value={meetingData.subject}
-                  onChange={handleChange}
-                  placeholder="e.g., Policy Review Meeting"
-                  className="w-full rounded-lg border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 focus:ring-2"
+                  name="title"
+                  value={formData.title}
+                  onChange={handleInputChange}
+                  placeholder="e.g., Project Discussion, Sales Meeting"
+                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500"
                   required
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              {/* Date and Time */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    <FiCalendar className="inline w-4 h-4 mr-1" />
                     Date *
                   </label>
                   <input
                     type="date"
                     name="date"
-                    value={meetingData.date}
-                    onChange={handleChange}
+                    value={formData.date}
+                    onChange={handleInputChange}
                     min={new Date().toISOString().split('T')[0]}
-                    className="w-full rounded-lg border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 focus:ring-2"
+                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500"
                     required
                   />
                 </div>
-
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    <FiClock className="inline w-4 h-4 mr-1" />
                     Time *
                   </label>
                   <input
                     type="time"
                     name="time"
-                    value={meetingData.time}
-                    onChange={handleChange}
-                    className="w-full rounded-lg border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 focus:ring-2"
+                    value={formData.time}
+                    onChange={handleInputChange}
+                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500"
                     required
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              {/* Duration and Location */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Duration (minutes)
                   </label>
                   <select
                     name="duration"
-                    value={meetingData.duration}
-                    onChange={handleChange}
-                    className="w-full rounded-lg border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 focus:ring-2"
+                    value={formData.duration}
+                    onChange={handleInputChange}
+                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500"
                   >
-                    <option value="15">15 minutes</option>
                     <option value="30">30 minutes</option>
-                    <option value="45">45 minutes</option>
                     <option value="60">1 hour</option>
                     <option value="90">1.5 hours</option>
                     <option value="120">2 hours</option>
                   </select>
                 </div>
-
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Location
@@ -257,80 +473,53 @@ function ScheduleMeetingModal({ isOpen, onClose, contact, onMeetingScheduled }) 
                   <input
                     type="text"
                     name="location"
-                    value={meetingData.location}
-                    onChange={handleChange}
-                    placeholder="Office, Online, etc."
-                    className="w-full rounded-lg border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 focus:ring-2"
+                    value={formData.location}
+                    onChange={handleInputChange}
+                    placeholder="e.g., Conference Room A, Zoom, Office"
+                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500"
                   />
                 </div>
               </div>
 
+              {/* Notes */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Meeting Notes
                 </label>
                 <textarea
                   name="notes"
-                  value={meetingData.notes}
-                  onChange={handleChange}
+                  value={formData.notes}
+                  onChange={handleInputChange}
                   rows={3}
-                  placeholder="Agenda, topics to discuss, preparation notes..."
-                  className="w-full rounded-lg border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 focus:ring-2"
+                  placeholder="Add any additional notes or agenda items..."
+                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500"
                 />
               </div>
 
-              {/* Contact Information Display */}
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <h4 className="text-sm font-medium text-gray-700 mb-2">Meeting Attendee</h4>
-                <div className="flex items-center space-x-3">
-                  <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                    <span className="text-xs font-medium text-blue-600">
-                      {contact?.first_name?.[0]}{contact?.last_name?.[0]}
-                    </span>
-                  </div>
-                  <div>
-                    <p className="font-medium text-gray-900">
-                      {contact?.first_name} {contact?.last_name}
-                    </p>
-                    <p className="text-sm text-gray-500 flex items-center">
-                      <FiMail className="mr-1" />
-                      {contact?.email}
-                    </p>
-                  </div>
-                </div>
-              </div>
+              
             </div>
 
-            <div className="flex justify-end space-x-3 p-6 border-t bg-gray-50">
+            <div className="flex justify-end space-x-3 mt-6">
               <button
-                onClick={onClose}
+                type="button"
+                onClick={handleClose}
                 className="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium"
               >
                 Cancel
               </button>
               <button
-                onClick={handleScheduleMeeting}
-                disabled={loading}
-                className="px-6 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-semibold rounded-lg hover:from-green-600 hover:to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 disabled:hover:scale-100 shadow-lg flex items-center"
+                type="submit"
+                disabled={isSubmitting}
+                className="px-6 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
               >
-                {loading ? (
-                  <>
-                    <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
-                    Scheduling...
-                  </>
-                ) : (
-                  <>
-                    <FiSave className="w-4 h-4 mr-2" />
-                    Schedule Meeting
-                  </>
-                )}
+                <FiCalendar className="mr-2" />
+                {isSubmitting ? 'Scheduling...' : 'Schedule Meeting'}
               </button>
             </div>
-          </div>
+          </form>
           </div>
         </div>
       </Dialog>
-    
   );
 }
 

@@ -11,6 +11,7 @@ var vite_config_default = defineConfig({
     }
   },
   server: {
+   
     proxy: {
       "/api": {
         target: "http://localhost:5000",

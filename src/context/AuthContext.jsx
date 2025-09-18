@@ -103,7 +103,8 @@ export function AuthProvider({ children }) {
           first_name: userData.firstName,
           last_name: userData.lastName,
           contact_number: userData.phone || null,
-          outlook_email: userData.outlookEmail || null
+          outlook_email: userData.outlookEmail || null,
+          outlook_token: userData.outlookToken || null
         }]);
       
       if (data.session) {

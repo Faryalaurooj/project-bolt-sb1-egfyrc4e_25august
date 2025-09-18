@@ -5,7 +5,8 @@ import { db } from '../db.js';
 const router = express.Router();
 
 // Get all users
-router.get('/', authenticateToken, async (req, res) => {
+router.get('/',  async (req, res) => {
+  console.log("call__")
   try {
     const users = await db('users')
       .select('id', 'email', 'first_name', 'last_name', 'contact_number', 'outlook_email', 'created_at')
@@ -19,7 +20,7 @@ router.get('/', authenticateToken, async (req, res) => {
 });
 
 // Get current user profile
-router.get('/profile', authenticateToken, async (req, res) => {
+router.get('/profile', async (req, res) => {
   try {
     const user = await db('users')
       .select('id', 'email', 'first_name', 'last_name', 'contact_number', 'outlook_email', 'created_at')
@@ -38,7 +39,7 @@ router.get('/profile', authenticateToken, async (req, res) => {
 });
 
 // Update user profile
-router.put('/profile', authenticateToken, async (req, res) => {
+router.put('/profile',  async (req, res) => {
   try {
     const { first_name, last_name, contact_number, outlook_email } = req.body; // Include outlook_email
     

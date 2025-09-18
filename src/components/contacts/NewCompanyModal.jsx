@@ -2,8 +2,12 @@ import React, { useState } from 'react';
 import { Dialog } from '@headlessui/react';
 import { FiX, FiHome, FiGlobe, FiMapPin, FiPhone, FiMail } from 'react-icons/fi';
 import { createCompany } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
 function NewCompanyModal({ isOpen, onClose, onCompanySaved }) {
+
+  const { user } = useAuth();
+
   const [formData, setFormData] = useState({
     name: '',
     domain: '',
@@ -35,7 +39,7 @@ function NewCompanyModal({ isOpen, onClose, onCompanySaved }) {
 
     try {
       console.log('🏢 NewCompanyModal: Calling createCompany API...');
-      await createCompany(formData);
+      await createCompany({...formData, created_by: user.id});
       console.log('🏢 NewCompanyModal: Company created successfully');
       
       // Reset form

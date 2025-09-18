@@ -20,7 +20,7 @@ function ContactForm({ onSubmit, initialData = {} }) {
       spouse_last_name: initialData.spouse_last_name || '',
       spouse_email: initialData.spouse_email || '',
       spouse_phone: initialData.spouse_phone || '',
-      spouse_date_of_birth: initialData.spouse_date_of_birth || '',
+      spouse_date_of_birth: initialData.spouse_date_of_birth || null,
       keep_in_touch_interval: initialData.keep_in_touch_interval || '',
       household_members: initialData.household_members || []
     }

@@ -3,8 +3,9 @@ import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
-router.post("/send-text", authenticateToken, async (req, res) => {
-  const { to, message, contact_id, recipient_id } = req.body;
+router.post("/send-text", async (req, res) => {
+  const { to, message } = req.body;
+  console.log("process.env.TEXTMAGIC_USERNAME",process.env.TEXTMAGIC_USERNAME)
 
   console.log('📱 TextMagic API: Sending text to:', to, 'Message:', message);
 
@@ -13,8 +14,8 @@ router.post("/send-text", authenticateToken, async (req, res) => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-TM-Username": process.env.TEXTMAGIC_USERNAME,
-        "X-TM-Key": process.env.TEXTMAGIC_API_KEY,
+        "X-TM-Username": "alishahanif",
+        "X-TM-Key": "h6F5FJoxqwjPCCc9p6A5pYJoS2yIGQ",
       },
       body: JSON.stringify({
         phones: to,
@@ -51,7 +52,7 @@ router.post("/send-text", authenticateToken, async (req, res) => {
   }
 });
 
-// Get text message history for a contact
+// Get text message history for a contact (legacy - now uses TextMagic)
 router.get("/history/contact/:contactId", authenticateToken, async (req, res) => {
   try {
     // This will be handled by Supabase directly from frontend

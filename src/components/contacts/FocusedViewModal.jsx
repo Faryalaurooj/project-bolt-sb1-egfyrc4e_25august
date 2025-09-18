@@ -11,7 +11,8 @@ import {
   getAllNotes,
   getPhoneCallsByContactId,
   getTextMessagesForContact,
-  getEmailsForContact
+  getEmailsForContact,
+  getPoliciesByContactIdSupabase
 } from '../../services/api';
 import ScheduleMeetingModal from './ScheduleMeetingModal';
 
@@ -30,6 +31,7 @@ function FocusedViewModal({ isOpen, onClose, contact, onNoteSaved, onActionItemS
   const [policyDocuments, setPolicyDocuments] = useState([]);
   const [communications, setCommunications] = useState([]);
   const [uploadingDocument, setUploadingDocument] = useState(false);
+  const [policies, setPolicies] = useState([]);
   
   // Meeting scheduling
   const [isScheduleMeetingOpen, setIsScheduleMeetingOpen] = useState(false);
@@ -57,7 +59,8 @@ function FocusedViewModal({ isOpen, onClose, contact, onNoteSaved, onActionItemS
         notesData,
         phoneCallsData,
         textMessagesData,
-        emailsData
+        emailsData,
+        policiesData
       ] = await Promise.all([
         getHouseholdMembers(contact.id).catch(err => {
           console.error('Error fetching household members:', err);
@@ -86,12 +89,17 @@ function FocusedViewModal({ isOpen, onClose, contact, onNoteSaved, onActionItemS
         getEmailsForContact(contact.id).catch(err => {
           console.error('Error fetching emails:', err);
           return [];
+        }),
+        getPoliciesByContactIdSupabase(contact.id).catch(err => {
+          console.error('Error fetching policies:', err);
+          return [];
         })
       ]);
 
       setHouseholdMembers(householdData || []);
       setCompanies(companiesData || []);
       setPolicyDocuments(documentsData || []);
+      setPolicies(policiesData || []);
       
       // Combine all communications and sort by date
       const allCommunications = [
@@ -222,53 +230,64 @@ function FocusedViewModal({ isOpen, onClose, contact, onNoteSaved, onActionItemS
         <div className="flex min-h-screen items-center justify-center p-4">
           <Dialog.Overlay className="fixed inset-0 bg-black bg-opacity-50" />
 
-          <div className="relative bg-white w-full max-w-6xl mx-4 rounded-2xl shadow-2xl overflow-hidden">
-            {/* Header */}
-            <div className="bg-gradient-to-r from-mintyLemonGreen-500 to-green-500 p-6">
-              <div className="flex justify-between items-center">
-                <div className="flex items-center space-x-4">
-                  <div className="w-16 h-16 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
-                    <span className="text-2xl font-bold text-white">
+          <div className="relative bg-white w-full max-w-7xl mx-4 rounded-2xl shadow-2xl overflow-hidden">
+            {/* Enhanced Header */}
+            <div className="bg-gradient-to-r from-green-500 via-emerald-600 to-lime-500 p-8">
+              <div className="flex justify-between items-start">
+                <div className="flex items-center space-x-6">
+                  <div className="w-20 h-20 bg-white bg-opacity-20 rounded-2xl flex items-center justify-center shadow-lg">
+                    <span className="text-3xl font-bold text-white">
                       {contact.first_name?.[0]}{contact.last_name?.[0]}
                     </span>
                   </div>
-                  <div>
-                    <Dialog.Title className="text-2xl font-bold text-white">
+                  <div className="flex-1">
+                    <Dialog.Title className="text-3xl font-bold text-white mb-2">
                       {contact.first_name} {contact.last_name}
                     </Dialog.Title>
-                    <div className="flex items-center space-x-4 mt-2">
+                    <div className="flex flex-wrap items-center gap-4 mb-3">
                       {contact.email && (
                         <a
                           href={`mailto:${contact.email}`}
-                          className="flex items-center text-green-100 hover:text-white transition-colors"
+                          className="flex items-center px-3 py-2 bg-white bg-opacity-20 text-white rounded-lg hover:bg-opacity-30 transition-all duration-200 backdrop-blur-sm"
                         >
-                          <FiMail className="mr-1" />
+                          <FiMail className="mr-2" />
                           {contact.email}
                         </a>
                       )}
                       {(contact.phone || contact.cell_number) && (
                         <a
                           href={`tel:${contact.phone || contact.cell_number}`}
-                          className="flex items-center text-green-100 hover:text-white transition-colors"
+                          className="flex items-center px-3 py-2 bg-white bg-opacity-20 text-white rounded-lg hover:bg-opacity-30 transition-all duration-200 backdrop-blur-sm"
                         >
-                          <FiPhone className="mr-1" />
+                          <FiPhone className="mr-2" />
                           {contact.phone || contact.cell_number}
                         </a>
                       )}
+                      {contact.contact_status && (
+                        <span className="px-3 py-2 bg-white bg-opacity-20 text-white rounded-lg backdrop-blur-sm text-sm font-medium">
+                          {contact.contact_status}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-green-100 text-sm">
+                      Created {new Date(contact.created_at).toLocaleDateString()}
                     </div>
                   </div>
                 </div>
                 <div className="flex items-center space-x-3">
                   <button
-                    onClick={() => setIsScheduleMeetingOpen(true)}
-                    className="px-6 py-3 bg-white bg-opacity-20 text-white font-semibold rounded-lg hover:bg-opacity-30 transition-all duration-200 transform hover:scale-105 flex items-center"
+                    onClick={() =>{
+                      setIsScheduleMeetingOpen(true)
+                      onClose()
+                    }}
+                    className="px-6 py-3 bg-white bg-opacity-20 text-white font-semibold rounded-xl hover:bg-opacity-30 transition-all duration-200 transform hover:scale-105 flex items-center backdrop-blur-sm shadow-lg"
                   >
                     <FiCalendar className="mr-2" />
-                    Book an Appointment
+                    Book Appointment
                   </button>
                   <button
                     onClick={onClose}
-                    className="text-white hover:text-gray-200 transition-colors"
+                    className="p-3 text-white hover:text-gray-200 hover:bg-white hover:bg-opacity-20 rounded-xl transition-all duration-200"
                   >
                     <FiX className="w-6 h-6" />
                   </button>
@@ -286,27 +305,27 @@ function FocusedViewModal({ isOpen, onClose, contact, onNoteSaved, onActionItemS
 
               {loading ? (
                 <div className="flex items-center justify-center py-12">
-                  <div className="animate-spin inline-block w-8 h-8 border-4 border-mintyLemonGreen-500 border-t-transparent rounded-full mb-4"></div>
+                  <div className="animate-spin inline-block w-8 h-8 border-4 border-green-500 border-t-transparent rounded-full mb-4"></div>
                   <p className="text-gray-600 ml-4">Loading contact details...</p>
                 </div>
               ) : (
                 <Tab.Group selectedIndex={activeTab} onChange={setActiveTab}>
-                  <Tab.List className="flex space-x-1 rounded-xl bg-gray-100 p-1 mb-6">
+                  <Tab.List className="flex space-x-1 rounded-xl bg-gradient-to-r from-gray-100 to-green-50 p-1 mb-8 shadow-sm">
                     {tabs.map((tab, index) => (
                       <Tab
                         key={tab.name}
                         className={({ selected }) =>
                           classNames(
-                            'w-full rounded-lg py-3 px-4 text-sm font-medium leading-5 flex items-center justify-center space-x-2',
-                            'ring-white ring-opacity-60 ring-offset-2 ring-offset-mintyLemonGreen-400 focus:outline-none focus:ring-2',
+                            'w-full rounded-lg py-4 px-6 text-sm font-medium leading-5 flex items-center justify-center space-x-3 transition-all duration-200',
+                            'ring-white ring-opacity-60 ring-offset-2 ring-offset-green-400 focus:outline-none focus:ring-2',
                             selected
-                              ? 'bg-white text-mintyLemonGreen-700 shadow'
-                              : 'text-gray-600 hover:bg-white hover:bg-opacity-50 hover:text-mintyLemonGreen-600'
+                              ? 'bg-white text-green-700 shadow-lg transform scale-105'
+                              : 'text-gray-600 hover:bg-white hover:bg-opacity-70 hover:text-green-600 hover:transform hover:scale-102'
                           )
                         }
                       >
-                        <tab.icon className="w-4 h-4" />
-                        <span>{tab.name}</span>
+                        <tab.icon className="w-5 h-5" />
+                        <span className="font-semibold">{tab.name}</span>
                       </Tab>
                     ))}
                   </Tab.List>
@@ -314,10 +333,15 @@ function FocusedViewModal({ isOpen, onClose, contact, onNoteSaved, onActionItemS
                   <Tab.Panels>
                     {/* Personal Details Tab */}
                     <Tab.Panel>
-                      <div className="space-y-6">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          <div className="bg-gray-50 p-4 rounded-lg">
-                            <h3 className="text-lg font-semibold text-gray-900 mb-4">Basic Information</h3>
+                      <div className="space-y-8">
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-6 rounded-2xl border border-blue-200 shadow-sm">
+                            <div className="flex items-center space-x-3 mb-6">
+                              <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center">
+                                <FiUser className="w-5 h-5 text-white" />
+                              </div>
+                              <h3 className="text-xl font-bold text-gray-900">Basic Information</h3>
+                            </div>
                             <div className="space-y-3">
                               <div>
                                 <span className="text-sm font-medium text-gray-700">Full Name:</span>
@@ -357,8 +381,13 @@ function FocusedViewModal({ isOpen, onClose, contact, onNoteSaved, onActionItemS
                             </div>
                           </div>
 
-                          <div className="bg-gray-50 p-4 rounded-lg">
-                            <h3 className="text-lg font-semibold text-gray-900 mb-4">Contact Information</h3>
+                          <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-6 rounded-2xl border border-green-200 shadow-sm">
+                            <div className="flex items-center space-x-3 mb-6">
+                              <div className="w-10 h-10 bg-green-500 rounded-xl flex items-center justify-center">
+                                <FiPhone className="w-5 h-5 text-white" />
+                              </div>
+                              <h3 className="text-xl font-bold text-gray-900">Contact Information</h3>
+                            </div>
                             <div className="space-y-3">
                               {contact.email && (
                                 <div>
@@ -412,10 +441,10 @@ function FocusedViewModal({ isOpen, onClose, contact, onNoteSaved, onActionItemS
                         )}
 
                         {/* Business Information */}
-                        {(contact.customer_type || contact.account_type || contact.contact_status) && (
+                        {(contact.customer_type || contact.account_type || contact.contact_status || contact.customer_sub_status || contact.customer_agent_of_record || contact.customer_csr || contact.keyed_by || contact.office || contact.source) && (
                           <div className="bg-gray-50 p-4 rounded-lg">
                             <h3 className="text-lg font-semibold text-gray-900 mb-4">Business Information</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               {contact.customer_type && (
                                 <div>
                                   <span className="text-sm font-medium text-gray-700">Customer Type:</span>
@@ -434,6 +463,156 @@ function FocusedViewModal({ isOpen, onClose, contact, onNoteSaved, onActionItemS
                                   <span className="ml-2 text-gray-900">{contact.contact_status}</span>
                                 </div>
                               )}
+                              {contact.customer_sub_status && (
+                                <div>
+                                  <span className="text-sm font-medium text-gray-700">Customer Sub Status:</span>
+                                  <span className="ml-2 text-gray-900">{contact.customer_sub_status}</span>
+                                </div>
+                              )}
+                              {contact.customer_agent_of_record && (
+                                <div>
+                                  <span className="text-sm font-medium text-gray-700">Agent of Record:</span>
+                                  <span className="ml-2 text-gray-900">{contact.customer_agent_of_record}</span>
+                                </div>
+                              )}
+                              {contact.customer_csr && (
+                                <div>
+                                  <span className="text-sm font-medium text-gray-700">CSR:</span>
+                                  <span className="ml-2 text-gray-900">{contact.customer_csr}</span>
+                                </div>
+                              )}
+                              {contact.keyed_by && (
+                                <div>
+                                  <span className="text-sm font-medium text-gray-700">Keyed By:</span>
+                                  <span className="ml-2 text-gray-900">{contact.keyed_by}</span>
+                                </div>
+                              )}
+                              {contact.office && (
+                                <div>
+                                  <span className="text-sm font-medium text-gray-700">Office:</span>
+                                  <span className="ml-2 text-gray-900">{contact.office}</span>
+                                </div>
+                              )}
+                              {contact.source && (
+                                <div>
+                                  <span className="text-sm font-medium text-gray-700">Source:</span>
+                                  <span className="ml-2 text-gray-900">{contact.source}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Driver's License Information */}
+                        {(contact.drivers_license || contact.dl_state || contact.date_licensed) && (
+                          <div className="bg-gray-50 p-4 rounded-lg">
+                            <h3 className="text-lg font-semibold text-gray-900 mb-4">Driver's License Information</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              {contact.drivers_license && (
+                                <div>
+                                  <span className="text-sm font-medium text-gray-700">License Number:</span>
+                                  <span className="ml-2 text-gray-900">{contact.drivers_license}</span>
+                                </div>
+                              )}
+                              {contact.dl_state && (
+                                <div>
+                                  <span className="text-sm font-medium text-gray-700">State:</span>
+                                  <span className="ml-2 text-gray-900">{contact.dl_state}</span>
+                                </div>
+                              )}
+                              {contact.date_licensed && (
+                                <div>
+                                  <span className="text-sm font-medium text-gray-700">Date Licensed:</span>
+                                  <span className="ml-2 text-gray-900">
+                                    {new Date(contact.date_licensed).toLocaleDateString()}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Communication Preferences */}
+                        {(contact.preferred_contact_method || contact.do_not_email || contact.do_not_text || contact.do_not_call || contact.do_not_mail || contact.do_not_market || contact.do_not_capture_email) && (
+                          <div className="bg-gray-50 p-4 rounded-lg">
+                            <h3 className="text-lg font-semibold text-gray-900 mb-4">Communication Preferences</h3>
+                            <div className="space-y-3">
+                              {contact.preferred_contact_method && (
+                                <div>
+                                  <span className="text-sm font-medium text-gray-700">Preferred Contact Method:</span>
+                                  <span className="ml-2 text-gray-900 capitalize">{contact.preferred_contact_method}</span>
+                                </div>
+                              )}
+                              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                                {contact.do_not_email && (
+                                  <div className="flex items-center">
+                                    <span className="text-sm text-red-600 font-medium">Do Not Email</span>
+                                  </div>
+                                )}
+                                {contact.do_not_text && (
+                                  <div className="flex items-center">
+                                    <span className="text-sm text-red-600 font-medium">Do Not Text</span>
+                                  </div>
+                                )}
+                                {contact.do_not_call && (
+                                  <div className="flex items-center">
+                                    <span className="text-sm text-red-600 font-medium">Do Not Call</span>
+                                  </div>
+                                )}
+                                {contact.do_not_mail && (
+                                  <div className="flex items-center">
+                                    <span className="text-sm text-red-600 font-medium">Do Not Mail</span>
+                                  </div>
+                                )}
+                                {contact.do_not_market && (
+                                  <div className="flex items-center">
+                                    <span className="text-sm text-red-600 font-medium">Do Not Market</span>
+                                  </div>
+                                )}
+                                {contact.do_not_capture_email && (
+                                  <div className="flex items-center">
+                                    <span className="text-sm text-red-600 font-medium">Do Not Capture Email</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Additional Contact Information */}
+                        {(contact.email2 || contact.ssn_tax_id) && (
+                          <div className="bg-gray-50 p-4 rounded-lg">
+                            <h3 className="text-lg font-semibold text-gray-900 mb-4">Additional Information</h3>
+                            <div className="space-y-3">
+                              {contact.email2 && (
+                                <div>
+                                  <span className="text-sm font-medium text-gray-700">Secondary Email:</span>
+                                  <a href={`mailto:${contact.email2}`} className="ml-2 text-blue-600 hover:text-blue-800">
+                                    {contact.email2}
+                                  </a>
+                                </div>
+                              )}
+                              {contact.ssn_tax_id && (
+                                <div>
+                                  <span className="text-sm font-medium text-gray-700">SSN/Tax ID:</span>
+                                  <span className="ml-2 text-gray-900">{contact.ssn_tax_id}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Mailing Address */}
+                        {(contact.mailing_address || contact.mailing_city || contact.mailing_state || contact.mailing_zip) && (
+                          <div className="bg-gray-50 p-4 rounded-lg">
+                            <h3 className="text-lg font-semibold text-gray-900 mb-4">Mailing Address</h3>
+                            <div className="space-y-2">
+                              {contact.mailing_address && <p className="text-gray-900">{contact.mailing_address}</p>}
+                              {(contact.mailing_city || contact.mailing_state || contact.mailing_zip) && (
+                                <p className="text-gray-900">
+                                  {contact.mailing_city}{contact.mailing_city && contact.mailing_state ? ', ' : ''}{contact.mailing_state} {contact.mailing_zip}
+                                </p>
+                              )}
                             </div>
                           </div>
                         )}
@@ -443,10 +622,10 @@ function FocusedViewModal({ isOpen, onClose, contact, onNoteSaved, onActionItemS
                           <div className="bg-gray-50 p-4 rounded-lg">
                             <h3 className="text-lg font-semibold text-gray-900 mb-4">Tags</h3>
                             <div className="flex flex-wrap gap-2">
-                              {contact.tags.map((tag, index) => (
+                              {contact?.tags?.map((tag, index) => (
                                 <span
                                   key={index}
-                                  className="px-3 py-1 bg-mintyLemonGreen-100 text-mintyLemonGreen-800 rounded-full text-sm font-medium"
+                                  className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium"
                                 >
                                   {tag}
                                 </span>
@@ -525,8 +704,8 @@ function FocusedViewModal({ isOpen, onClose, contact, onNoteSaved, onActionItemS
                                 <div key={member.id} className="bg-white p-4 rounded-lg border">
                                   <div className="flex items-start justify-between">
                                     <div className="flex items-center">
-                                      <div className="w-10 h-10 bg-mintyLemonGreen-100 rounded-full flex items-center justify-center mr-3">
-                                        <FiUser className="text-mintyLemonGreen-600" />
+                                      <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center mr-3">
+                                        <FiUser className="text-green-600" />
                                       </div>
                                       <div>
                                         <h4 className="font-medium text-gray-900">
@@ -601,8 +780,8 @@ function FocusedViewModal({ isOpen, onClose, contact, onNoteSaved, onActionItemS
                               <div key={connection.companies.id} className="bg-white p-4 rounded-lg border">
                                 <div className="flex items-start justify-between">
                                   <div className="flex items-center">
-                                    <div className="w-10 h-10 bg-mintyLemonGreen-100 rounded-full flex items-center justify-center mr-3">
-                                      <FiBriefcase className="text-mintyLemonGreen-600" />
+                                    <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center mr-3">
+                                      <FiBriefcase className="text-green-600" />
                                     </div>
                                     <div>
                                       <h4 className="font-medium text-gray-900">{connection.companies.name}</h4>
@@ -636,71 +815,120 @@ function FocusedViewModal({ isOpen, onClose, contact, onNoteSaved, onActionItemS
                     {/* Policies Tab */}
                     <Tab.Panel>
                       <div className="space-y-6">
-                        <div className="flex justify-between items-center">
-                          <h3 className="text-lg font-semibold text-gray-900">Policy Documents</h3>
-                          <label className="flex items-center px-4 py-2 bg-mintyLemonGreen-500 text-white rounded-lg hover:bg-mintyLemonGreen-600 cursor-pointer transition-colors">
-                            <FiUpload className="mr-2" />
-                            {uploadingDocument ? 'Uploading...' : 'Upload Document'}
-                            <input
-                              type="file"
-                              onChange={handleDocumentUpload}
-                              accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.accord"
-                              className="hidden"
-                              disabled={uploadingDocument}
-                            />
-                          </label>
-                        </div>
-
-                        {policyDocuments.length > 0 ? (
-                          <div className="space-y-4">
-                            {policyDocuments.map((document) => (
-                              <div key={document.id} className="bg-white p-4 rounded-lg border hover:bg-mintyLemonGreen-50 transition-colors">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center">
-                                    <div className="w-10 h-10 bg-mintyLemonGreen-100 rounded-lg flex items-center justify-center mr-3">
-                                      <span className="text-mintyLemonGreen-600 text-xs font-medium">
-                                        {document.file_type?.split('/')[1]?.toUpperCase() || 'DOC'}
-                                      </span>
+                        <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-6 rounded-2xl border border-green-200 shadow-sm">
+                          <div className="flex items-center space-x-3 mb-6">
+                            <div className="w-10 h-10 bg-green-500 rounded-xl flex items-center justify-center">
+                              <FiFileText className="w-5 h-5 text-white" />
+                            </div>
+                            <h3 className="text-xl font-bold text-gray-900">Policy Information</h3>
+                          </div>
+                          
+                          {policies.length > 0 ? (
+                            <div className="space-y-6">
+                              {policies.map((policy, index) => (
+                                <div key={policy.id || index} className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
+                                  <div className="flex items-center justify-between mb-4">
+                                    <h4 className="text-lg font-semibold text-gray-900">
+                                      Policy #{index + 1}
+                                    </h4>
+                                    <span className="px-3 py-1 bg-green-100 text-green-800 text-sm font-medium rounded-full">
+                                      {policy.policy_entry || 'New Business'}
+                                    </span>
+                                  </div>
+                                  
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="space-y-3">
+                                      <div>
+                                        <span className="text-sm font-medium text-gray-700">Company:</span>
+                                        <span className="ml-2 text-gray-900">{policy.company || 'Not specified'}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-sm font-medium text-gray-700">Product:</span>
+                                        <span className="ml-2 text-gray-900">{policy.product || 'Not specified'}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-sm font-medium text-gray-700">Payment Plan:</span>
+                                        <span className="ml-2 text-gray-900">{policy.payment_plan || 'Not specified'}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-sm font-medium text-gray-700">Policy Number:</span>
+                                        <span className="ml-2 text-gray-900 font-mono">{policy.policy_number || 'Not specified'}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-sm font-medium text-gray-700">Premium:</span>
+                                        <span className="ml-2 text-gray-900">{policy.pure_premium || 'Not specified'}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-sm font-medium text-gray-700">Payment Due Day:</span>
+                                        <span className="ml-2 text-gray-900">{policy.payment_due_day || 'Not specified'}</span>
+                                      </div>
                                     </div>
-                                    <div>
-                                      <h4 className="font-medium text-gray-900">{document.file_name}</h4>
-                                      <p className="text-sm text-gray-500">
-                                        {document.file_size ? `${(document.file_size / 1024).toFixed(1)} KB` : ''} • 
-                                        Uploaded {new Date(document.created_at).toLocaleDateString()}
-                                      </p>
+                                    
+                                    <div className="space-y-3">
+                                      <div>
+                                        <span className="text-sm font-medium text-gray-700">Effective Date:</span>
+                                        <span className="ml-2 text-gray-900">
+                                          {policy.eff_date ? new Date(policy.eff_date).toLocaleDateString() : 'Not specified'}
+                                        </span>
+                                      </div>
+                                      <div>
+                                        <span className="text-sm font-medium text-gray-700">Expiration Date:</span>
+                                        <span className="ml-2 text-gray-900">
+                                          {policy.exp_date ? new Date(policy.exp_date).toLocaleDateString() : 'Not specified'}
+                                        </span>
+                                      </div>
+                                      <div>
+                                        <span className="text-sm font-medium text-gray-700">Source:</span>
+                                        <span className="ml-2 text-gray-900">{policy.source || 'Not specified'}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-sm font-medium text-gray-700">Sub Source:</span>
+                                        <span className="ml-2 text-gray-900">{policy.sub_source || 'Not specified'}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-sm font-medium text-gray-700">Agent of Record:</span>
+                                        <span className="ml-2 text-gray-900">{policy.policy_agent_of_record || 'Not specified'}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-sm font-medium text-gray-700">CSR:</span>
+                                        <span className="ml-2 text-gray-900">{policy.policy_csr || 'Not specified'}</span>
+                                      </div>
                                     </div>
                                   </div>
-                                  <div className="flex space-x-2">
-                                    <a
-                                      href={document.file_url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="flex items-center px-3 py-1 text-mintyLemonGreen-600 hover:text-mintyLemonGreen-800 border border-mintyLemonGreen-600 rounded-md text-sm transition-colors"
-                                    >
-                                      <FiDownload className="mr-1" />
-                                      View
-                                    </a>
-                                    <button
-                                      onClick={() => handleDeleteDocument(document.id)}
-                                      className="flex items-center px-3 py-1 text-red-600 hover:text-red-800 border border-red-600 rounded-md text-sm transition-colors"
-                                    >
-                                      <FiTrash2 className="mr-1" />
-                                      Delete
-                                    </button>
+                                  
+                                  <div className="mt-4 pt-4 border-t border-gray-200">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                      <div>
+                                        <span className="text-sm font-medium text-gray-700">Prior Policy Number:</span>
+                                        <span className="ml-2 text-gray-900">{policy.prior_policy_number || 'Not specified'}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-sm font-medium text-gray-700">Commission Split:</span>
+                                        <span className="ml-2 text-gray-900">{policy.commission_split || '100.00%'}</span>
+                                      </div>
+                                    </div>
+                                    
+                                    {policy.memo && (
+                                      <div className="mt-4">
+                                        <span className="text-sm font-medium text-gray-700">Memo:</span>
+                                        <p className="mt-1 text-gray-900 bg-gray-50 p-3 rounded-md">{policy.memo}</p>
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="text-center py-8 text-gray-500">
-                            <FiFileText className="mx-auto h-12 w-12 mb-4" />
-                            <p>No policy documents uploaded yet.</p>
-                            <p className="text-sm mt-2">Upload PDF, Word, ACCORD forms, or image files related to this contact's policies.</p>
-                          </div>
-                        )}
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-center py-12">
+                              <FiFileText className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+                              <h3 className="text-lg font-medium text-gray-900 mb-2">No Policy Data</h3>
+                              <p className="text-gray-500">No policy information found for this contact.</p>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </Tab.Panel>
+
 
                     {/* Communication Tab */}
                     <Tab.Panel>
@@ -715,7 +943,7 @@ function FocusedViewModal({ isOpen, onClose, contact, onNoteSaved, onActionItemS
                         {communications.length > 0 ? (
                           <div className="space-y-4 max-h-96 overflow-y-auto">
                             {communications.map((comm) => (
-                              <div key={`${comm.type}-${comm.id}`} className="bg-white p-4 rounded-lg border hover:bg-mintyLemonGreen-50 transition-colors">
+                              <div key={`${comm.type}-${comm.id}`} className="bg-white p-4 rounded-lg border hover:bg-green-50 transition-colors">
                                 <div className="flex items-start space-x-3">
                                   <div className="flex-shrink-0">
                                     {getCommunicationIcon(comm.type)}

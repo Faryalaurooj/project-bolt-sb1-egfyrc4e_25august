@@ -1,15 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Dialog } from '@headlessui/react';
-import { FiX, FiPhone, FiUser, FiClock, FiSave, FiExternalLink } from 'react-icons/fi';
+import { FiX, FiPhone, FiUser, FiClock, FiSave, FiExternalLink, FiWifi, FiGlobe } from 'react-icons/fi';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
 import { useAuth } from '../../context/AuthContext';
 import { createPhoneCall } from '../../services/api';
+import { makeWebRTCCall, makeDirectCall, endWebRTCCall, isWebRTCSupported, getWebRTCStatus, getCurrentCall } from '../../services/webrtcService';
+import CallControlPanel from './CallControlPanel';
 import ContactSelectModal from '../contacts/ContactSelectModal';
+import { useToast } from '../../hooks/useToast';
 
 function MakeCallModal({ isOpen, onClose, onCallSaved }) {
   const { user } = useAuth();
-  const gotoConnectId = import.meta.env.VITE_GoTo_CONNECT;
+  const { showSuccess, showWarning, showError } = useToast();
   
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
@@ -22,6 +25,7 @@ function MakeCallModal({ isOpen, onClose, onCallSaved }) {
   const [callOutcome, setCallOutcome] = useState('');
   const [callStartTime, setCallStartTime] = useState(null);
   const [isCallActive, setIsCallActive] = useState(false);
+  const [showCallControls, setShowCallControls] = useState(false);
 
   const modules = {
     toolbar: [
@@ -41,7 +45,45 @@ function MakeCallModal({ isOpen, onClose, onCallSaved }) {
     'Call back requested'
   ];
 
-  const handleCallNow = () => {
+  // Make direct call using GoTo Connect API
+  const initiateDirectCall = async (phoneNumber, contactName) => {
+    try {
+      console.log("📞 Making direct call via GoTo Connect API...");
+      const callResult = await makeDirectCall(phoneNumber, contactName);
+      
+      if (callResult.success) {
+        console.log('✅ Direct call successful via GoTo Connect API:', callResult);
+        return callResult;
+      } else {
+        throw new Error('Direct call failed');
+      }
+      
+    } catch (error) {
+      console.error('❌ Direct call failed:', error);
+      throw new Error(`Direct call failed: ${error.message}. Please check your network connection.`);
+    }
+  };
+
+  // Make call using WebRTC via Jive API
+  const initiateWebRTCCall = async (phoneNumber, contactName) => {
+    try {
+      console.log("🌐 Making WebRTC call via Jive API...");
+      const callResult = await makeWebRTCCall(phoneNumber, contactName);
+      
+      if (callResult.success) {
+        console.log('✅ WebRTC call successful via Jive API:', callResult);
+        return callResult;
+      } else {
+        throw new Error('WebRTC call failed');
+      }
+      
+    } catch (error) {
+      console.error('❌ WebRTC call failed:', error);
+      throw new Error(`WebRTC call failed: ${error.message}. Please check your microphone permissions and network connection.`);
+    }
+  };
+
+  const handleCallNow = async () => {
     if (!selectedContact) {
       setError('Please select a contact to call');
       return;
@@ -58,13 +100,29 @@ function MakeCallModal({ isOpen, onClose, onCallSaved }) {
     setCallStartTime(startTime);
     setIsCallActive(true);
     
-    // Initiate the call using device's default dialer
-    window.open(`tel:${phoneNumber}`, '_self');
-    
-    // Pre-fill the call log form with timestamp
     const contactName = selectedContact.name || `${selectedContact.first_name} ${selectedContact.last_name}`;
-    setTitle(`Call to ${contactName}`);
-    setContent(`📞 Call initiated to ${contactName}\n📱 Phone: ${phoneNumber}\n⏰ Call started: ${startTime.toLocaleString()}\n🆔 GoTo Connect ID: ${gotoConnectId || 'Not configured'}\n\n--- Call Notes ---\n`);
+    
+         try {
+      // Use Direct Call via GoTo Connect API
+      console.log('📞 Making call via GoTo Connect Direct API...');
+      const callResult = await initiateDirectCall(phoneNumber, contactName);
+      
+      // Call was successful via Direct API
+      setTitle(`Call to ${contactName} (Direct)`);
+      setContent(`📞 Call initiated via GoTo Connect Direct API\n👤 Contact: ${contactName}\n📱 Phone: ${phoneNumber}\n⏰ Call started: ${startTime.toLocaleString()}\n🔧 Call ID: ${callResult.callId || 'Generated'}\n📞 Call Method: GoTo Connect Direct Calling\n\n--- Call Notes ---\n`);
+      
+      showSuccess('📞 Call initiated successfully via GoTo Connect!');
+      
+      // Show call controls
+      setShowCallControls(true);
+                   } catch (error) {
+      console.error('❌ Direct call failed:', error);
+      setError(`Direct call failed: ${error.message}`);
+        
+      // Direct call failed
+        setTitle(`Call to ${contactName} (Failed)`);
+      setContent(`❌ Call failed via GoTo Connect Direct API\n👤 Contact: ${contactName}\n📱 Phone: ${phoneNumber}\n⏰ Attempted: ${startTime.toLocaleString()}\n📞 Call Method: GoTo Connect Direct Calling (Failed)\n❌ Error: ${error.message}\n\n--- Call Notes ---\n`);
+      }
     
     // Start a timer to track call duration
     const timer = setInterval(() => {
@@ -78,17 +136,33 @@ function MakeCallModal({ isOpen, onClose, onCallSaved }) {
     setTimeout(() => clearInterval(timer), 3600000); // Clear after 1 hour max
   };
 
-  const handleEndCall = () => {
+  const handleEndCall = async () => {
     if (callStartTime) {
       const endTime = new Date();
       const durationMinutes = Math.floor((endTime - callStartTime) / 1000 / 60);
       setCallDuration(durationMinutes.toString());
       setIsCallActive(false);
       
+      // End direct call
+      try {
+        await endWebRTCCall();
+        console.log('✅ Direct call ended successfully');
+      } catch (error) {
+        console.error('❌ Error ending direct call:', error);
+      }
+      
       // Update content with call end time
       const endTimeText = `\n⏰ Call ended: ${endTime.toLocaleString()}\n⏱️ Duration: ${durationMinutes} minutes\n`;
       setContent(prev => prev + endTimeText);
+      
+      // Hide call controls
+      setShowCallControls(false);
     }
+  };
+
+  const handleCallEnded = () => {
+    setShowCallControls(false);
+    setIsCallActive(false);
   };
 
   const handleLogCall = async () => {
@@ -241,17 +315,30 @@ function MakeCallModal({ isOpen, onClose, onCallSaved }) {
                           className="w-full flex items-center justify-center px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <FiPhone className="mr-2" />
-                          {isCallActive ? 'Call in Progress...' : `Call ${selectedContact.name || `${selectedContact.first_name} ${selectedContact.last_name}`}`}
+                          {isCallActive ? 'Call in Progress...' : 
+                           `Call ${selectedContact.name || `${selectedContact.first_name} ${selectedContact.last_name}`}`}
                         </button>
                         
-                        {isCallActive && (
-                          <button
-                            onClick={handleEndCall}
-                            className="w-full flex items-center justify-center px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
-                          >
-                            End Call & Log
-                          </button>
-                        )}
+                                                 {isCallActive && (
+                           <button
+                             onClick={handleEndCall}
+                             className="w-full flex items-center justify-center px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
+                           >
+                             End Call & Log
+                           </button>
+                         )}
+                         
+                                                   {/* Direct Call Status Display */}
+                          <div className="text-center p-3 rounded-lg border">
+                            <div className="bg-green-50 border-green-200">
+                              <p className="text-xs text-green-700 font-medium">
+                                ✅ GoTo Connect Ready
+                              </p>
+                              <p className="text-xs text-green-600 mt-1">
+                                Direct calling via GoTo Connect API
+                              </p>
+                            </div>
+                          </div>
                       </div>
                       <p className="text-xs text-green-700 mt-2 text-center">
                         Phone: {selectedContact.phone || selectedContact.contact_number || selectedContact.cell_number}
@@ -331,46 +418,7 @@ function MakeCallModal({ isOpen, onClose, onCallSaved }) {
                 </div>
               </div>
 
-              {/* GoTo Connect Integration Info */}
-              <div className="mt-6 bg-blue-50 p-4 rounded-lg border border-blue-200">
-                <h4 className="text-sm font-medium text-blue-800 mb-2 flex items-center">
-                  <FiExternalLink className="mr-2" />
-                  GoTo Connect Integration Status
-                </h4>
-                
-                {gotoConnectId ? (
-                  <div className="space-y-2">
-                    <div className="flex items-center space-x-2">
-                      <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                      <span className="text-xs text-blue-700 font-medium">GoTo Connect ID Configured</span>
-                    </div>
-                    <p className="text-xs text-blue-600 bg-blue-100 p-2 rounded">
-                      Connect ID: {gotoConnectId.substring(0, 20)}...
-                    </p>
-                    <p className="text-xs text-blue-700">
-                      Note: This ID is for GoTo Connect integration. For browser-based VoIP calling, additional API integration would be required.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <div className="flex items-center space-x-2">
-                      <span className="w-2 h-2 bg-yellow-500 rounded-full"></span>
-                      <span className="text-xs text-blue-700 font-medium">GoTo Connect ID Not Found</span>
-                    </div>
-                    <p className="text-xs text-blue-700">
-                      Add VITE_GoTo_CONNECT to your .env file for GoTo Connect integration.
-                    </p>
-                  </div>
-                )}
-                
-                <p className="text-xs text-blue-700">
-                  Current functionality: Standard phone dialer integration
-                </p>
-                
-                <div className="mt-3 p-2 bg-blue-100 rounded text-xs text-blue-800">
-                  <strong>For Browser VoIP:</strong> GoTo Connect API integration would require additional backend implementation for browser-based calling.
-                </div>
-              </div>
+                      
 
               <div className="flex justify-end space-x-3 mt-6">
                 <button
@@ -398,6 +446,11 @@ function MakeCallModal({ isOpen, onClose, onCallSaved }) {
         onClose={() => setIsContactSelectOpen(false)}
         onContactSelect={handleContactSelect}
       />
+
+      {/* Call Control Panel */}
+      {showCallControls && (
+        <CallControlPanel onCallEnded={handleCallEnded} />
+      )}
     </>
   );
 }

@@ -42,6 +42,7 @@ import { Bar, Line, Doughnut } from 'react-chartjs-2';
 import { useAuth } from '../context/AuthContext';
 import { useCustomization } from '../context/CustomizationContext';
 import useDashboardKPI from '../hooks/useDashboardKPI'; // KPI Hook
+import { createExactDate, toDateString, debugDate } from '../utils/dateUtils';
 
 function SortableDashboardSection({ id, children, className = "" }) {
   const {
@@ -89,6 +90,9 @@ function CalendarSection({ refreshTrigger }) {
   const [loading, setLoading] = useState(false);
   const [outlookConnected, setOutlookConnected] = useState(false);
   const { user } = useAuth();
+
+  // Use the new date utility function
+  const createLocalDate = createExactDate;
 
   // Color palette for team members
   const colorPalette = [
@@ -204,9 +208,12 @@ function CalendarSection({ refreshTrigger }) {
   };
 
   const getEventsForDate = (date) => {
-    const dateStr = date.toISOString().split('T')[0];
+    // Use the new date utility to create consistent date string
+    const dateStr = toDateString(date);
+    
     const crmEvents = events.filter(event => event.event_date === dateStr);
     const outlookEventsForDate = outlookEvents.filter(event => event.event_date === dateStr);
+    
     return [...crmEvents, ...outlookEventsForDate];
   }; 
 
@@ -251,7 +258,15 @@ function CalendarSection({ refreshTrigger }) {
   };
 
   const onClickDay = (clickedDate) => {
-    setSelectedDateForModal(clickedDate);
+    debugDate('🔧 Dashboard - Clicked Date', clickedDate);
+    
+    // Create a local date using the utility function
+    const localDate = createLocalDate(clickedDate);
+    debugDate('🔧 Dashboard - Local Date Created', localDate);
+    
+    console.log('🔧 Dashboard - Date String:', toDateString(localDate));
+    
+    setSelectedDateForModal(localDate);
     setIsAddEventModalOpen(true);
   };
 
@@ -410,8 +425,11 @@ function CalendarSection({ refreshTrigger }) {
         }}
         date={selectedDateForModal}
         onSave={handleAddEvent}
+        onDeleteEvent={handleDeleteEvent}
         user={user}
         userColors={userColors}
+        getUserName={getUserName}
+        eventsForSelectedDay={selectedDateForModal ? getEventsForDate(selectedDateForModal) : []}
       />
     </div>
   );

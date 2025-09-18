@@ -15,6 +15,8 @@ import Reporting from './pages/Reporting';
 import PageNotFound from './pages/PageNotFound';
 import PipelineBoard from './components/pipeline/PipelineBoard';
 import IvansUploadsPage from './pages/IvansUploadsPage';
+
+import Attachments from './pages/Attachments';
 import LoginForm from './components/auth/LoginForm';
 import RegisterForm from './components/auth/RegisterForm';
 
@@ -80,6 +82,8 @@ function App() {
           <Route path="notes" element={<NotesActions />} />
           <Route path="automations" element={<Automations />} />
           <Route path="reporting" element={<Reporting />} />
+         
+          <Route path="attachments" element={<Attachments />} />
           <Route path="ivans-uploads" element={<IvansUploadsPage />} />
           <Route path="*" element={<PageNotFound />} />
         </Route>

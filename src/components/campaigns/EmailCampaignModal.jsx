@@ -1,390 +1,731 @@
 import React, { useState, useEffect } from 'react';
 import { Dialog } from '@headlessui/react';
-import { FiX, FiSearch, FiArrowLeft, FiSend, FiSave, FiTrash2, FiImage, FiLink, FiSmile, FiTable, FiAlignLeft, FiAlignCenter, FiAlignRight, FiBold, FiItalic, FiUnderline, FiEye, FiSettings, FiUsers } from 'react-icons/fi';
-import ReactQuill, { Quill } from 'react-quill';
+import { FiX, FiSend, FiSave, FiEye, FiSettings, FiChevronDown, FiChevronUp, FiPaperclip, FiTrash2 } from 'react-icons/fi';
+import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
-import { getEmailTemplates, getEmailSignatures, createEmailTemplate, updateEmailTemplate, deleteEmailTemplate } from '../../services/api';
+import { getEmailTemplates, getEmailSignatures, getUsers, createEmail, saveEmailDraft, getEmailDrafts, deleteEmailDraft } from '../../services/api';
 import TemplateSelectModal from './TemplateSelectModal';
 import { useToast } from '../../hooks/useToast';
+import { useAuth } from '../../context/AuthContext';
+import { sendOutlookEmail } from '../../services/outlookSync';
 
-function EmailCampaignModal({ isOpen, onClose, preSelectedMedia = null }) {
-  const { showSuccess, showInfo, showWarning } = useToast();
-  
-  console.log('📧 EmailCampaignModal: Rendered with isOpen:', isOpen);
-  
+
+function EmailCampaignModal({ isOpen, onClose }) {
+  const { showSuccess, showInfo, showWarning, showError } = useToast();
+  const { user } = useAuth();
+
+  const [users, setUsers] = useState([]);
+  const [sendFrom, setSendFrom] = useState('');
+  const [usersLoading, setUsersLoading] = useState(false);
+
+  // Email compose fields
+  const [to, setTo] = useState('');
+  const [cc, setCc] = useState('');
+  const [bcc, setBcc] = useState('');
   const [subject, setSubject] = useState('');
   const [content, setContent] = useState('');
-  const [mediaUrl, setMediaUrl] = useState(preSelectedMedia || '');
-  const [selectedTags, setSelectedTags] = useState([]);
+  const [priority, setPriority] = useState('normal');
+  const [attachments, setAttachments] = useState([]);
+
+  // UI state
+  const [showCc, setShowCc] = useState(false);
+  const [showBcc, setShowBcc] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  // Template and signature state
   const [selectedSignatureId, setSelectedSignatureId] = useState('');
-  const [selectedTemplateId, setSelectedTemplateId] = useState(null);
-  const [sendFrom, setSendFrom] = useState('Alisha Hanif');
-  
   const [templates, setTemplates] = useState([]);
   const [signatures, setSignatures] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  
+  const [sending, setSending] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [draftId, setDraftId] = useState(null);
+  const [lastSaved, setLastSaved] = useState(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+
+  // Modal states
   const [isTemplateSelectModalOpen, setIsTemplateSelectModalOpen] = useState(false);
-  const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
-  const [linkData, setLinkData] = useState({ url: '', text: '', title: '' });
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
 
-  // Set pre-selected media when modal opens
   useEffect(() => {
-    if (preSelectedMedia) {
-      setMediaUrl(preSelectedMedia);
+    const fetchUsers = async () => {
+      try {
+        setUsersLoading(true);
+        const usersData = await getUsers();
+        console.log('Fetched users data:', usersData);
+        setUsers(usersData || []);
+      } catch (err) {
+        console.error('Error fetching users:', err);
+        setUsers([]);
+      } finally {
+        setUsersLoading(false);
+      }
+    };
+
+    if (isOpen) {
+      fetchUsers();
+    } else {
+      // Clear states when modal is closed
+      clearAllStates();
     }
-  }, [preSelectedMedia]);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (users.length > 0 && user) {
+      let userData = users.find(u => u.email === user.email);
+      console.log("users",users);
+      setSendFrom(userData?.outlook_email || userData?.email || user?.email || '');
+      
+    }
+  }, [users, user]);
+
   useEffect(() => {
     if (isOpen) {
-      console.log('📧 EmailCampaignModal: Modal opened, fetching data...');
       fetchData();
     }
   }, [isOpen]);
 
+  // Auto-save draft functionality
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const autoSaveTimeout = setTimeout(() => {
+      if (hasUnsavedChanges && (to.trim() || subject.trim() || content.trim())) {
+        handleSaveDraft();
+      }
+    }, 3000); // Auto-save every 3 seconds
+
+    return () => clearTimeout(autoSaveTimeout);
+  }, [to, subject, content, hasUnsavedChanges, isOpen]);
+
+  // Track changes for auto-save
+  useEffect(() => {
+    if (isOpen) {
+      setHasUnsavedChanges(true);
+    }
+  }, [to, subject, content, cc, bcc, priority, selectedSignatureId]);
+
   const fetchData = async () => {
     try {
       setLoading(true);
-      setError(null);
-      console.log('📧 EmailCampaignModal: Starting to fetch templates and signatures...');
       const [templatesData, signaturesData] = await Promise.all([
         getEmailTemplates(),
         getEmailSignatures()
       ]);
-      console.log('📧 EmailCampaignModal: Data fetched:', {
-        templates: templatesData?.length || 0,
-        signatures: signaturesData?.length || 0
-      });
       setTemplates(templatesData || []);
       setSignatures(signaturesData || []);
     } catch (err) {
       console.error('Error fetching data:', err);
-      setError('Failed to load templates and signatures');
     } finally {
       setLoading(false);
     }
   };
 
   const modules = {
-    toolbar: {
-      container: [
-        [{ 'header': [1, 2, 3, false] }],
-        ['bold', 'italic', 'underline', 'strike'],
-        [{ 'color': [] }, { 'background': [] }],
-        [{ 'font': [] }, { 'size': ['small', false, 'large', 'huge'] }],
-        [{ 'align': [] }],
-        [{ 'list': 'ordered'}, { 'list': 'bullet' }],
-        ['blockquote', 'code-block'],
-        ['link', 'image', 'video'],
-        ['better-table'],
-        ['clean']
-      ],
-      handlers: {
-        'better-table': function() {
-          try {
-            if (this.quill) {
-              const tableModule = this.quill.getModule('better-table');
-              if (tableModule && typeof tableModule.insertTable === 'function') {
-                tableModule.insertTable(3, 3);
-              } else {
-                console.warn('Better-table module not available');
-              }
-            }
-          } catch (error) {
-            console.error('Error inserting table:', error);
-          }
-        },
-        // The 'link' handler is correctly defined to access component state
-        'link': function() {
-          setIsLinkModalOpen(true);
-        }
-      }
-    },
-    'better-table': {
-      operationMenu: {
-        items: {
-          unmergeCells: {
-            text: 'Another unmerge cells name'
-          }
-        }
-      }
-    }
+    toolbar: [
+      [{ 'font': [] }, { 'size': ['small', false, 'large', 'huge'] }],
+      ['bold', 'italic', 'underline', 'strike'],
+      [{ 'color': [] }, { 'background': [] }],
+      [{ 'align': [] }],
+      [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+      ['blockquote', 'code-block'],
+      ['link', 'image'],
+      ['clean']
+    ]
   };
 
-  const popularTags = [
-    { id: 'all', label: 'All Contacts' },
-    { id: 'prospect', label: 'Prospect' },
-    { id: 'personal', label: 'Personal Lines' },
-    { id: 'client', label: 'Client' },
-    { id: 'personal_tag', label: 'Personal' }
+  const formats = [
+    'font', 'size', 'bold', 'italic', 'underline', 'strike', 'blockquote',
+    'list', 'bullet', 'indent', 'link', 'image', 'color', 'background', 'align'
   ];
 
-  const handleTemplateSelect = (template) => {
-    console.log('📧 EmailCampaignModal: Template selected:', template);
-    setSelectedTemplateId(template.id);
-    setSubject(template.subject || '');
-    setContent(template.content || ''); // Ensure content is always a string
-    setIsTemplateSelectModalOpen(false);
-  };
-
-  const handleSignatureChange = (signatureId) => {
-    console.log('📧 EmailCampaignModal: Signature changed:', signatureId);
-    if (signatureId === 'add') {
-      showInfo('📝 Add signature functionality coming soon!');
+  const handleSendEmail = async () => {
+    if (!to.trim()) {
+      showWarning('⚠️ Please enter at least one recipient');
       return;
     }
-    setSelectedSignatureId(signatureId);
-    const signature = signatures.find(s => s.id === signatureId);
-    if (signature && signature.content) {
-      setContent(prev => (prev || '') + '\n\n' + signature.content);
-    }
-  };
-
-  const handlePreview = () => {
-    if (!subject.trim() || !content.trim()) {
-      showWarning('⚠️ Please enter both subject and content to preview');
+    if (!subject.trim()) {
+      showWarning('⚠️ Please enter a subject');
       return;
     }
-    setIsPreviewModalOpen(true);
-  };
-
-  const handleSaveAs = async () => {
-    if (!subject.trim() || !content.trim()) {
-      showWarning('⚠️ Please enter both subject and content');
+    if (!content.trim()) {
+      showWarning('⚠️ Please enter a message');
       return;
     }
 
+    setSending(true);
     try {
-      const templateData = {
-        title: subject,
-        subject: subject,
-        content: content
+      const emailData = {
+        to: to.split(',').map((e) => e.trim()),
+        cc: cc ? cc.split(',').map((e) => e.trim()) : [],
+        bcc: bcc ? bcc.split(',').map((e) => e.trim()) : [],
+        subject,
+        body: content,
+        isHtml: true,
+        attachments: attachments
       };
 
-      if (selectedTemplateId) {
-        await updateEmailTemplate(selectedTemplateId, templateData);
-        showSuccess('✅ Template updated successfully!');
-      } else {
-        await createEmailTemplate(templateData);
-        showSuccess('✅ Template saved successfully!');
+      // Send email via Outlook
+      await sendOutlookEmail(sendFrom, emailData);
+      
+      // Save email to database
+      try {
+        const emailRecord = {
+          subject: subject,
+          body: content,
+          status: 'sent',
+          to_emails: to,
+          cc_emails: cc || '',
+          bcc_emails: bcc || '',
+          from_email: sendFrom,
+          priority: priority,
+          attachments_count: attachments.length
+        };
+        
+        await createEmail(emailRecord);
+        console.log('Email saved to database successfully');
+      } catch (dbError) {
+        console.error('Error saving email to database:', dbError);
+        // Don't fail the entire operation if database save fails
+        showWarning('⚠️ Email sent but failed to save to database');
       }
       
-      fetchData(); // Refresh templates
+      showSuccess('📧 Email sent successfully!');
+      
+      // Delete draft if it exists
+      if (draftId) {
+        try {
+          await deleteEmailDraft(draftId);
+          console.log('Draft deleted after successful send');
+        } catch (err) {
+          console.error('Error deleting draft:', err);
+        }
+      }
+      
+      // Clear all states after successful send
+      clearAllStates();
+      
+      onClose();
     } catch (err) {
-      console.error('Error saving template:', err);
-      showError('❌ Failed to save template');
+      console.error('Error sending email:', err);
+      showError('❌ Failed to send email');
+    } finally {
+      setSending(false);
     }
   };
 
-  const handleDelete = async () => {
-    if (!selectedTemplateId) {
-      showWarning('⚠️ No template selected to delete');
+  // Function to clear all form states
+  const clearAllStates = () => {
+    setTo('');
+    setCc('');
+    setBcc('');
+    setSubject('');
+    setContent('');
+    setPriority('normal');
+    setAttachments([]);
+    setShowCc(false);
+    setShowBcc(false);
+    setShowAdvanced(false);
+    setSelectedSignatureId('');
+    setDraftId(null);
+    setLastSaved(null);
+    setHasUnsavedChanges(false);
+  };
+
+  // User selection handlers
+  const handleUserSelect = (field, selectedUser) => {
+    console.log('handleUserSelect called with:', field, selectedUser);
+    
+    if (!selectedUser) {
+      console.log('Invalid user:', selectedUser);
       return;
     }
+    const selectedEmail = selectedUser.outlook_email || selectedUser.email;
+    if (!selectedEmail) {
+      console.log('Missing both outlook_email and email on user:', selectedUser);
+      return;
+    }
+    
+    const currentEmails = field === 'to' ? to : field === 'cc' ? cc : bcc;
+    console.log('Current emails for field', field, ':', currentEmails);
+    
+    const emailList = currentEmails ? currentEmails.split(',').map(e => e.trim()).filter(e => e) : [];
+    console.log('Parsed email list:', emailList);
+    
+    if (!emailList.includes(selectedEmail)) {
+      const newEmailList = [...emailList, selectedEmail];
+      const newValue = newEmailList.join(', ');
+      console.log('New email value:', newValue);
+      
+      if (field === 'to') {
+        console.log('Setting TO field to:', newValue);
+        setTo(newValue);
+      } else if (field === 'cc') {
+        console.log('Setting CC field to:', newValue);
+        setCc(newValue);
+      } else if (field === 'bcc') {
+        console.log('Setting BCC field to:', newValue);
+        setBcc(newValue);
+      }
+    } else {
+      console.log('Email already exists in list');
+    }
+  };
 
-    if (window.confirm('Are you sure you want to delete this template?')) {
-      try {
-        await deleteEmailTemplate(selectedTemplateId);
-        setSelectedTemplateId(null);
-        setSubject('');
-        setContent('');
-        showSuccess('✅ Template deleted successfully!');
-        fetchData(); // Refresh templates
-      } catch (err) {
-        console.error('Error deleting template:', err);
-        showError('❌ Failed to delete template');
+  const removeEmail = (field, emailToRemove) => {
+    const currentEmails = field === 'to' ? to : field === 'cc' ? cc : bcc;
+    const emailList = currentEmails.split(',').map(e => e.trim()).filter(e => e !== emailToRemove);
+    const newValue = emailList.join(', ');
+    
+    if (field === 'to') setTo(newValue);
+    else if (field === 'cc') setCc(newValue);
+    else if (field === 'bcc') setBcc(newValue);
+  };
+
+  const handleUserDropdownChange = (field, event) => {
+    const selectedUserId = event.target.value;
+    console.log('Selected user ID (raw):', selectedUserId);
+    console.log('Available users:', users);
+    
+    if (selectedUserId && selectedUserId !== '') {
+      // Try to find user by ID (handle both string and number IDs)
+      const selectedUser = users.find(u => u.id == selectedUserId || u.id === selectedUserId);
+      console.log('Found selected user:', selectedUser);
+      
+      if (selectedUser) {
+        console.log('Calling handleUserSelect with:', field, selectedUser);
+        handleUserSelect(field, selectedUser);
+      } else {
+        console.log('No user found with ID:', selectedUserId);
+      }
+    }
+    // Reset dropdown to default option
+    event.target.value = '';
+  };
+
+  const handleTemplateSelect = (template) => {
+    if (template) {
+      setSubject(template.subject || '');
+      setContent(template.content || '');
+    }
+  };
+
+  const handleSignatureSelect = (signatureId) => {
+    setSelectedSignatureId(signatureId);
+    if (signatureId) {
+      const selectedSignature = signatures.find(sig => sig.id === signatureId);
+      if (selectedSignature) {
+        // Append signature to existing content
+        const currentContent = content || '';
+        const signatureContent = selectedSignature.content || '';
+        if (currentContent && !currentContent.includes(signatureContent)) {
+          setContent(currentContent + '<br><br>' + signatureContent);
+        } else if (!currentContent) {
+          setContent(signatureContent);
+        }
       }
     }
   };
 
-  const handleSendTest = () => {
-    if (!subject.trim() || !content.trim()) {
-      showWarning('⚠️ Please enter both subject and content before sending test');
+  // Draft handling functions
+  const handleSaveDraft = async (showToast = true) => {
+    if (!to.trim() && !subject.trim() && !content.trim()) {
+      if (showToast) showWarning('⚠️ Nothing to save as draft');
       return;
     }
-    showSuccess('📧 Test email sent successfully! Check your inbox.');
-  };
 
-  const handleInsertLink = () => {
-    if (linkData.url && linkData.text) {
-      const linkHtml = `<a href="${linkData.url}" title="${linkData.title || linkData.text}" target="_blank" rel="noopener noreferrer">${linkData.text}</a>`;
-      setContent(content + linkHtml);
-      setLinkData({ url: '', text: '', title: '' });
-      setIsLinkModalOpen(false);
-      showSuccess('🔗 Link inserted successfully!');
+    setSaving(true);
+    try {
+      const draftData = {
+        id: draftId, // Will be null for new drafts
+        to_emails: to,
+        cc_emails: cc || '',
+        bcc_emails: bcc || '',
+        from_email: sendFrom,
+        subject: subject,
+        body: content,
+        priority: priority,
+        attachments_count: attachments.length,
+        signature_id: selectedSignatureId || null
+      };
+
+      const savedDraft = await saveEmailDraft(draftData);
+      setDraftId(savedDraft.id);
+      setLastSaved(new Date());
+      setHasUnsavedChanges(false);
+      
+      if (showToast) {
+        showSuccess('💾 Draft saved successfully!');
+      }
+    } catch (err) {
+      console.error('Error saving draft:', err);
+      if (showToast) {
+        showError('❌ Failed to save draft');
+      }
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleAIAssistant = () => {
-    showInfo('🤖 AI Assistant feature coming soon! This will help you write compelling email content automatically.');
+  const handleLoadDraft = (draft) => {
+    // Handle JSONB data from database
+    const parseRecipients = (recipients) => {
+      if (typeof recipients === 'string') {
+        try {
+          return JSON.parse(recipients);
+        } catch {
+          return [];
+        }
+      }
+      return Array.isArray(recipients) ? recipients : [];
+    };
+    
+    const toEmails = parseRecipients(draft.to_recipients).join(', ');
+    const ccEmails = parseRecipients(draft.cc_recipients).join(', ');
+    const bccEmails = parseRecipients(draft.bcc_recipients).join(', ');
+    
+    setTo(toEmails);
+    setCc(ccEmails);
+    setBcc(bccEmails);
+    setSubject(draft.subject || '');
+    setContent(draft.content || draft.body || '');
+    setPriority(draft.priority || 'normal');
+    setSelectedSignatureId(draft.signature_id || '');
+    setDraftId(draft.id);
+    setHasUnsavedChanges(false);
+    showSuccess('📝 Draft loaded successfully!');
   };
 
-  const handleAdvancedSettings = () => {
-    showInfo('⚙️ Advanced Settings coming soon! Configure delivery options, A/B testing, scheduling, and more.');
+  // Attachment handlers
+  const handleFileUpload = (event) => {
+    const files = Array.from(event.target.files);
+    const MAX_ATTACHMENT_BYTES = 3 * 1024 * 1024; // ~3MB per Graph API request limit
+
+    const oversized = files.filter((f) => f.size > MAX_ATTACHMENT_BYTES);
+    const allowed = files.filter((f) => f.size <= MAX_ATTACHMENT_BYTES);
+
+    if (oversized.length > 0) {
+      showWarning(`Some files exceed 3MB and were skipped: ${oversized.map(f => f.name).join(', ')}`);
+    }
+
+    const newAttachments = allowed.map((file, index) => ({
+      id: Date.now() + index,
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      file: file
+    }));
+    
+    if (newAttachments.length > 0) {
+      setAttachments(prev => [...prev, ...newAttachments]);
+      showSuccess(`📎 ${newAttachments.length} file(s) attached`);
+    }
   };
 
-  const handleNextPreviewRecipients = () => {
-    showInfo('📋 Recipient preview and selection workflow coming soon! You\'ll be able to select specific contacts and preview how the email will look for each recipient.');
+  const removeAttachment = (attachmentId) => {
+    setAttachments(prev => prev.filter(att => att.id !== attachmentId));
+    showInfo('📎 Attachment removed');
+  };
+
+  const formatFileSize = (bytes) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+  
+
+  const renderEmailField = (field, value, setter, placeholder, label) => {
+    const emailList = value ? value.split(',').map(e => e.trim()).filter(e => e) : [];
+    
+    return (
+      <div className="flex items-start space-x-3">
+        <label className="w-16 text-sm font-medium text-gray-700 mt-2">{label}:</label>
+        <div className="flex-1 space-y-3">
+          {/* Email Input Field */}
+          <input
+            type="text"
+            value={value}
+            onChange={(e) => setter(e.target.value)}
+            placeholder={placeholder}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+          />
+          
+          {/* User Selection Dropdown */}
+          <div className="flex items-center space-x-3">
+            <select
+              onChange={(e) => handleUserDropdownChange(field, e)}
+              className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors min-w-[200px]"
+              disabled={usersLoading}
+            >
+              <option value="">👥 Select user to add...</option>
+              {users.map(user => {
+               
+                return (
+                  <option key={user.id} value={user.id}>
+                    {user.outlook_email || user.email || 'No email available'}
+                  </option>
+                );
+              })}
+            </select>
+            
+            {usersLoading && (
+              <span className="text-sm text-gray-500">Loading users...</span>
+            )}
+          </div>
+
+          {/* Selected Emails Display */}
+          {emailList.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {emailList.map((email, index) => (
+                <span
+                  key={index}
+                  className="inline-flex items-center bg-blue-100 text-blue-800 text-sm px-3 py-1 rounded-full border border-blue-200"
+                >
+                  <span className="mr-2">📧</span>
+                  {email}
+                  <button
+                    onClick={() => removeEmail(field, email)}
+                    className="ml-2 text-blue-600 hover:text-red-600 transition-colors p-1 rounded-full hover:bg-blue-200"
+                    title="Remove email"
+                  >
+                    <FiX className="w-3 h-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
   };
 
   return (
     <>
-      <Dialog
-        open={isOpen}
-        onClose={onClose}
-        className="fixed inset-0 z-50 overflow-y-auto"
-      >
-        <div className="flex min-h-screen items-start justify-center p-4 pt-8">
+      <Dialog open={isOpen} onClose={onClose} className="fixed inset-0 z-50 overflow-y-auto">
+        <div className="flex min-h-screen items-start justify-center p-2 sm:p-4 pt-4">
           <Dialog.Overlay className="fixed inset-0 bg-black opacity-30" />
 
-          <div className="relative bg-white w-full max-w-lg mx-4 rounded-2xl shadow-2xl">
-            {/* Main Content */}
-            <div className="p-4">
-              <div className="flex justify-between items-center mb-4">
-                <div>
-                  <h2 className="text-lg font-bold text-blue-600">📧 New Email Campaign</h2>
-                  <p className="text-gray-600 text-xs">Create and send email campaigns</p>
+          <div className="relative bg-white w-full mx-2 sm:mx-4 rounded-lg shadow-2xl max-h-[95vh] overflow-hidden max-w-full sm:max-w-2xl md:max-w-3xl lg:max-w-4xl">
+            {/* Header */}
+            <div className="bg-white border-b border-gray-200 p-4 flex justify-between items-center">
+              <h2 className="text-xl font-semibold">New Message</h2>
+              <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+                <FiX className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="flex flex-col h-full max-h-[calc(95vh-80px)]">
+              <div className="flex-1 overflow-y-auto">
+                {/* Fields */}
+                <div className="p-4 space-y-3 border-b border-gray-200">
+                <div className="flex items-center">
+                  <label className="w-16 text-sm font-medium">From:</label>
+                  <input value={sendFrom} readOnly className="flex-1 border-none text-sm bg-transparent" />
                 </div>
-                <button onClick={onClose} className="text-gray-400 hover:text-gray-500 transition-colors">
-                  <FiX className="h-5 w-5" />
-                </button>
-              </div>
 
-              {error && (
-                <div className="mb-3 p-2 bg-red-50 text-red-700 rounded-lg text-sm">
-                  {error}
+                {renderEmailField('to', to, setTo, 'Enter multiple emails separated by commas', 'To')}
+
+                <div className="flex items-center space-x-2">
+                  <button 
+                    onClick={() => setShowCc(!showCc)} 
+                    className={`text-xs px-3 py-1 rounded-lg transition-colors ${
+                      showCc 
+                        ? 'bg-blue-100 text-blue-700 border border-blue-200' 
+                        : 'text-blue-600 hover:bg-blue-50 border border-transparent'
+                    }`}
+                  >
+                    Cc
+                  </button>
+                  <button 
+                    onClick={() => setShowBcc(!showBcc)} 
+                    className={`text-xs px-3 py-1 rounded-lg transition-colors ${
+                      showBcc 
+                        ? 'bg-blue-100 text-blue-700 border border-blue-200' 
+                        : 'text-blue-600 hover:bg-blue-50 border border-transparent'
+                    }`}
+                  >
+                    Bcc
+                  </button>
                 </div>
-              )}
 
-              <div className="mb-3">
-                <label className="block text-xs font-medium text-gray-700 mb-1">
-                  Send from:
-                </label>
-                <select 
-                  value={sendFrom}
-                  onChange={(e) => setSendFrom(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 transition-all p-2 text-sm"
-                >
-                  <option>Alisha Hanif</option>
-                  <option>Owner of the recipient</option>
-                  <option>Select an employee</option>
-                </select>
-              </div>
+                {showCc && renderEmailField('cc', cc, setCc, 'Enter multiple emails separated by commas', 'Cc')}
+                {showBcc && renderEmailField('bcc', bcc, setBcc, 'Enter multiple emails separated by commas', 'Bcc')}
 
-              <div className="mb-3">
-                <input
-                  type="text"
-                  placeholder="Subject *"
-                  value={subject}
-                  onChange={(e) => setSubject(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 transition-all p-2 text-sm font-medium"
-                />
-              </div>
-
-              {/* Media URL Display */}
-              {mediaUrl && (
-                <div className="mb-3 p-2 bg-blue-50 rounded-lg border border-blue-200">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <FiImage className="text-blue-600" />
-                      <span className="text-xs font-medium text-blue-800">Media attached</span>
-                    </div>
-                    <button
-                      onClick={() => setMediaUrl('')}
-                      className="text-red-500 hover:text-red-700 transition-colors"
+                <div className="flex items-center">
+                  <label className="w-16 text-sm font-medium">Subject:</label>
+                  <input
+                    type="text"
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                    placeholder="Enter subject"
+                    className="flex-1 border-none text-sm bg-transparent font-medium"
+                  />
+                  <div className="flex items-center space-x-2 ml-2">
+                    <select
+                      value={priority}
+                      onChange={(e) => setPriority(e.target.value)}
+                      className="text-xs border border-gray-300 rounded px-2 py-1"
                     >
-                      <FiX className="w-3 h-3" />
-                    </button>
+                      <option value="low">Low Priority</option>
+                      <option value="normal">Normal</option>
+                      <option value="high">High Priority</option>
+                    </select>
                   </div>
-                  <img src={mediaUrl} alt="Selected media" className="mt-2 h-16 w-full object-cover rounded border" />
                 </div>
-              )}
 
-              <div className="mb-3">
-                <button 
-                  onClick={handleAIAssistant}
-                  className="flex items-center text-blue-600 hover:text-blue-700 mb-2 font-medium transition-colors text-sm"
-                >
-                  <span className="mr-2">✨</span>
-                  Write email with our AI assistant
-                </button>
-                <ReactQuill
-                  value={content}
-                  onChange={setContent}
-                  modules={modules}
-                  className="h-32 mb-8 rounded-lg"
-                  placeholder="Hi {first name},"
-                />
-                <div className="text-right text-xs text-gray-500 mt-1">
-                  {content.replace(/<[^>]*>/g, '').length} characters
+                {/* Signature Dropdown */}
+                <div className="flex items-center">
+                  <label className="w-16 text-sm font-medium">Signature:</label>
+                  <div className="flex-1 flex items-center space-x-3">
+                    <select
+                      value={selectedSignatureId}
+                      onChange={(e) => handleSignatureSelect(e.target.value)}
+                      className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors min-w-[200px]"
+                      disabled={loading}
+                    >
+                      <option value="">📝 Select signature...</option>
+                      {signatures.map(signature => (
+                        <option key={signature.id} value={signature.id}>
+                          {signature.name}
+                        </option>
+                      ))}
+                    </select>
+                    {loading && (
+                      <span className="text-sm text-gray-500">Loading signatures...</span>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              <div className="flex justify-between items-center mt-3">
-                <button 
-                  onClick={() => setIsTemplateSelectModalOpen(true)}
-                  className="flex items-center text-blue-600 hover:text-blue-700 text-xs font-medium transition-colors"
-                >
-                  📄 Use existing email template
-                </button>
-                <div className="text-xs text-gray-500">
-                  (first name) is a placeholder for recipient names; actual names will be populated.
+                {/* Attachments Section */}
+                <div className="flex items-start">
+                  <label className="w-16 text-sm font-medium text-gray-700 mt-2">Attach:</label>
+                  <div className="flex-1 space-y-3">
+                    <div className="flex items-center space-x-3">
+                      <label className="cursor-pointer bg-blue-50 hover:bg-blue-100 text-blue-700 text-sm px-4 py-2 rounded-lg border border-blue-200 transition-colors">
+                        <FiPaperclip className="inline mr-2" />
+                        Choose Files
+                        <input
+                          type="file"
+                          multiple
+                          onChange={handleFileUpload}
+                          className="hidden"
+                        />
+                      </label>
+                      <span className="text-sm text-gray-500">
+                        Max file size per attachment: 3MB (Graph API inline)
+                      </span>
+                    </div>
+                    
+                    {/* Attachments Display */}
+                    {attachments.length > 0 && (
+                      <div className="space-y-2">
+                        {attachments.map(attachment => (
+                          <div key={attachment.id} className="flex items-center justify-between bg-gray-50 p-3 rounded-lg border">
+                            <div className="flex items-center space-x-3">
+                              <FiPaperclip className="text-gray-500 w-4 h-4" />
+                              <div>
+                                <div className="text-sm font-medium">{attachment.name}</div>
+                                <div className="text-xs text-gray-500">{formatFileSize(attachment.size)}</div>
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => removeAttachment(attachment.id)}
+                              className="text-red-500 hover:text-red-700 p-2 rounded-full hover:bg-red-50 transition-colors"
+                              title="Remove attachment"
+                            >
+                              <FiTrash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              <div className="mt-4">
-                <select
-                  value={selectedSignatureId}
-                  onChange={(e) => handleSignatureChange(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 transition-all p-2 text-sm"
-                  disabled={loading}
-                >
-                  <option value="">Alisha's Email Signatures</option>
-                  {signatures.map(signature => (
-                    <option key={signature.id} value={signature.id}>
-                      {signature.name}
-                    </option>
-                  ))}
-                  <option value="add">Add signature</option>
-                </select>
-              </div>
-
-              <div className="mt-4 flex justify-between items-center">
-                <button 
-                  onClick={handleAdvancedSettings}
-                  className="text-gray-600 hover:text-gray-800 text-xs flex items-center font-medium transition-colors"
-                >
-                  <FiSettings className="mr-1 w-3 h-3" />
-                  Advanced Settings
-                </button>
-                
-                <div className="flex space-x-2">
-                  <button
-                    onClick={handlePreview}
-                    className="px-3 py-2 bg-gray-100 text-gray-700 font-medium rounded-lg hover:bg-gray-200 transition-colors text-sm flex items-center"
-                  >
-                    <FiEye className="mr-1 w-3 h-3" />
-                    Preview
-                  </button>
-                  <button
-                    onClick={handleSaveAs}
-                    className="px-3 py-2 bg-blue-100 text-blue-700 font-medium rounded-lg hover:bg-blue-200 transition-colors text-sm flex items-center"
-                  >
-                    <FiSave className="mr-1 w-3 h-3" />
-                    Save Template
-                  </button>
-                  <button
-                    onClick={handleSendTest}
-                    className="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-semibold rounded-lg hover:from-blue-600 hover:to-indigo-700 transition-all duration-200 transform hover:scale-105 shadow-md text-sm flex items-center"
-                  >
-                    <FiSend className="mr-1 w-3 h-3" />
-                    Send Test
-                  </button>
+                {/* Editor */}
+                <div className="flex flex-col">
+                  <ReactQuill
+                    value={content}
+                    onChange={setContent}
+                    modules={modules}
+                    formats={formats}
+                    className="min-h-[200px]"
+                    placeholder="Type your message here..."
+                  />
                 </div>
               </div>
             </div>
 
+              {/* Actions */}
+              <div className="bg-gray-50 p-4 flex justify-between">
+                <div className="flex space-x-2">
+                  <button onClick={() => setIsPreviewModalOpen(true)} className="text-sm text-gray-600 hover:text-gray-800 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors">
+                    <FiEye className="inline mr-1" /> Preview
+                  </button>
+                  <button 
+                    onClick={() => handleSaveDraft(true)} 
+                    disabled={saving || (!to.trim() && !subject.trim() && !content.trim())}
+                    className="text-sm text-gray-600 hover:text-gray-800 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                    title="Save as draft"
+                  >
+                    {saving ? (
+                      <>
+                        <svg className="animate-spin -ml-1 mr-1 h-3 w-3 text-gray-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <FiSave className="inline mr-1" /> Save Draft
+                      </>
+                    )}
+                  </button>
+                  <button 
+                    onClick={clearAllStates} 
+                    className="text-sm text-gray-600 hover:text-gray-800 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors"
+                    title="Clear all fields"
+                  >
+                    <FiSettings className="inline mr-1" /> Clear
+                  </button>
+                </div>
+                
+                {/* Draft Status */}
+                <div className="flex items-center space-x-3 text-xs text-gray-500">
+                  {lastSaved && (
+                    <span>Last saved: {lastSaved.toLocaleTimeString()}</span>
+                  )}
+                  {hasUnsavedChanges && (
+                    <span className="text-orange-500">• Unsaved changes</span>
+                  )}
+                  {draftId && (
+                    <span className="text-blue-500">• Draft #{draftId.slice(-6)}</span>
+                  )}
+                </div>
+                <button
+                  onClick={handleSendEmail}
+                  disabled={!to.trim() || !subject.trim() || !content.trim() || sending}
+                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                >
+                  {sending ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Sending...
+                    </>
+                  ) : (
+                    <>
+                      <FiSend className="inline mr-1" /> Send
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </Dialog>
@@ -398,12 +739,12 @@ function EmailCampaignModal({ isOpen, onClose, preSelectedMedia = null }) {
         <div className="flex min-h-screen items-center justify-center p-4">
           <Dialog.Overlay className="fixed inset-0 bg-black opacity-30" />
 
-          <div className="relative bg-white w-full max-w-lg mx-4 rounded-2xl shadow-2xl">
-            <div className="bg-gradient-to-r from-blue-500 to-indigo-600 p-4 rounded-t-2xl">
+          <div className="relative bg-white w-full max-w-2xl mx-4 rounded-lg shadow-2xl">
+            <div className="bg-blue-600 p-4 rounded-t-lg">
               <div className="flex justify-between items-center">
                 <div>
-                  <h3 className="text-lg font-bold text-white">📧 Email Preview</h3>
-                  <p className="text-blue-100 text-xs">Preview how your email will look</p>
+                  <h3 className="text-lg font-semibold text-white">📧 Email Preview</h3>
+                  <p className="text-blue-100 text-sm">Preview how your email will appear</p>
                 </div>
                 <button
                   onClick={() => setIsPreviewModalOpen(false)}
@@ -414,121 +755,85 @@ function EmailCampaignModal({ isOpen, onClose, preSelectedMedia = null }) {
               </div>
             </div>
             
-            <div className="p-4">
-              <div className="border border-gray-200 rounded-lg p-3 bg-gray-50">
-                <div className="mb-3 pb-3 border-b border-gray-200">
-                  <div className="text-xs text-gray-600 mb-1">From: {sendFrom}</div>
-                  <div className="text-sm font-semibold text-gray-900">Subject: {subject}</div>
-                </div>
-                {mediaUrl && (
-                  <div className="mb-3">
-                    <img src={mediaUrl} alt="Email media" className="max-w-full h-24 object-cover rounded border" />
+            <div className="p-6">
+              <div className="border border-gray-300 rounded-lg overflow-hidden">
+                {/* Email Header */}
+                <div className="bg-gray-50 p-4 border-b border-gray-300">
+                  <div className="space-y-2 text-sm">
+                    <div><strong>From:</strong> {sendFrom}</div>
+                    <div><strong>To:</strong> {to}</div>
+                    {cc && <div><strong>Cc:</strong> {cc}</div>}
+                    {bcc && <div><strong>Bcc:</strong> {bcc}</div>}
+                    <div><strong>Subject:</strong> {subject}</div>
+                    {priority !== 'normal' && (
+                      <div><strong>Priority:</strong> <span className={priority === 'high' ? 'text-red-600' : 'text-blue-600'}>{priority.toUpperCase()}</span></div>
+                    )}
                   </div>
-                )}
-                <div 
-                  className="prose prose-xs max-w-none"
-                  dangerouslySetInnerHTML={{ __html: content }}
-                />
+                </div>
+
+                                  {/* Attachments */}
+                  {attachments.length > 0 && (
+                    <div className="bg-gray-50 p-4 border-b border-gray-300">
+                      <div className="text-sm font-medium text-gray-700 mb-2">Attachments:</div>
+                      {attachments.map(attachment => (
+                        <div key={attachment.id} className="flex items-center text-sm text-gray-600">
+                          <FiPaperclip className="mr-2 w-4 h-4" />
+                          {attachment.name} ({formatFileSize(attachment.size)})
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Email Body */}
+                  <div className="p-4 bg-white">
+                    <div 
+                      className="prose prose-sm max-w-none"
+                      dangerouslySetInnerHTML={{ __html: content }}
+                    />
+                  </div>
               </div>
             </div>
             
-            <div className="bg-gray-50 px-4 py-3 flex justify-between rounded-b-2xl">
+            <div className="bg-gray-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg">
               <button
                 onClick={() => setIsPreviewModalOpen(false)}
-                className="px-3 py-2 text-gray-600 hover:text-gray-800 font-medium transition-colors text-sm"
+                className="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium transition-colors"
               >
                 Close Preview
               </button>
               <button
-                onClick={handleNextPreviewRecipients}
-                className="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-semibold rounded-lg hover:from-blue-600 hover:to-indigo-700 transition-all duration-200 transform hover:scale-105 shadow-md text-sm flex items-center"
+                onClick={() => {
+                  setIsPreviewModalOpen(false);
+                  handleSendEmail();
+                }}
+                disabled={sending}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
               >
-                <FiUsers className="mr-1 w-3 h-3" />
-                Next: Select Recipients
+                {sending ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Sending...
+                  </>
+                ) : (
+                  <>
+                    <FiSend className="inline mr-2 w-4 h-4" />
+                    Send Email
+                  </>
+                )}
               </button>
             </div>
           </div>
         </div>
       </Dialog>
+
       <TemplateSelectModal
         isOpen={isTemplateSelectModalOpen}
         onClose={() => setIsTemplateSelectModalOpen(false)}
         onSelect={handleTemplateSelect}
       />
-
-      {/* Link Insert Modal */}
-      <Dialog
-        open={isLinkModalOpen}
-        onClose={() => setIsLinkModalOpen(false)}
-        className="fixed inset-0 z-[60] overflow-y-auto"
-      >
-        <div className="flex min-h-screen items-center justify-center">
-          <Dialog.Overlay className="fixed inset-0 bg-black opacity-30" />
-
-          <div className="relative bg-white w-full max-w-xs mx-4 rounded-xl shadow-xl p-3">
-            <div className="flex justify-between items-center mb-3">
-              <h3 className="text-sm font-semibold text-gray-900">🔗 Insert Link</h3>
-              <button
-                onClick={() => setIsLinkModalOpen(false)}
-                className="text-gray-400 hover:text-gray-500"
-              >
-                <FiX className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">URL</label>
-                <input
-                  type="url"
-                  value={linkData.url}
-                  onChange={(e) => setLinkData({ ...linkData, url: e.target.value })}
-                  placeholder="https://example.com"
-                  className="w-full rounded-lg border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 transition-all p-2 text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Text to Display</label>
-                <input
-                  type="text"
-                  value={linkData.text}
-                  onChange={(e) => setLinkData({ ...linkData, text: e.target.value })}
-                  placeholder="Link text"
-                  className="w-full rounded-lg border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 transition-all p-2 text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Title (optional)</label>
-                <input
-                  type="text"
-                  value={linkData.title}
-                  onChange={(e) => setLinkData({ ...linkData, title: e.target.value })}
-                  placeholder="Link title"
-                  className="w-full rounded-lg border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 transition-all p-2 text-xs"
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end space-x-2 mt-4">
-              <button
-                onClick={() => setIsLinkModalOpen(false)}
-                className="px-3 py-2 text-gray-600 hover:text-gray-800 font-medium transition-colors text-xs"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleInsertLink}
-                disabled={!linkData.url || !linkData.text}
-                className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium text-xs"
-              >
-                Insert Link
-              </button>
-            </div>
-          </div>
-        </div>
-      </Dialog>
     </>
   );
 }

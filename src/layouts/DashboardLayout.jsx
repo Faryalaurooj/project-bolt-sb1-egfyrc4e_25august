@@ -4,7 +4,7 @@ import {
   FiHome, FiUsers, FiMail, FiCalendar, FiMessageSquare, FiClipboard,
   FiActivity, FiSettings, FiPieChart, FiDollarSign, FiCheckSquare,
   FiEdit2, FiUser, FiPhone, FiChevronLeft, FiChevronRight,
-  FiChevronDown, FiChevronUp, FiSliders
+  FiChevronDown, FiChevronUp, FiSliders, FiFileText, FiPaperclip
 } from 'react-icons/fi';
 
 import EmailCampaignModal from '../components/campaigns/EmailCampaignModal';
@@ -83,6 +83,8 @@ const DashboardLayout = () => {
     { path: '/taskboards', icon: FiCheckSquare, label: 'Task Boards' },
     { path: '/pipeline', icon: FiDollarSign, label: 'Sales Pipeline' },
     { path: '/contacts', icon: FiUsers, label: 'Contacts' },
+  
+    { path: '/attachments', icon: FiPaperclip, label: 'Attachments' },
     { path: '/texting', icon: FiMessageSquare, label: 'Texting' },
     { path: '/notes', icon: FiActivity, label: 'Notes & Actions' },
   ];

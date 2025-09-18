@@ -10,6 +10,7 @@ import TaskFilters from './TaskFilters';
 import { syncTaskWithOutlook, initializeOutlookSync } from '../../services/outlookSync';
 import IvansModal from '../ivans/IvansModal';
 import { getUsers } from '../../services/api';
+import AddTaskModal from '../contacts/AddTaskModal';
 
 function TaskBoard() {
   const [tasks, setTasks] = useState(() => {
@@ -335,9 +336,12 @@ function TaskBoard() {
         isEditMode={isEditMode}
         setIsEditMode={setIsEditMode}
       />
+        <AddTaskModal isOpen={isNewTaskModalOpen} onClose={() => setIsNewTaskModalOpen(false)} />
 
       <Dialog
-        open={isNewTaskModalOpen}
+        // open={isNewTaskModalOpen}
+        // onClose={() => setIsNewTaskModalOpen(false)}
+        open={false}
         onClose={() => setIsNewTaskModalOpen(false)}
         className="fixed z-10 inset-0 overflow-y-auto"
       >
@@ -348,7 +352,6 @@ function TaskBoard() {
             <Dialog.Title className="text-lg font-medium text-gray-900 mb-4">
               Create New Task
             </Dialog.Title>
-
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700">Title</label>
@@ -412,7 +415,7 @@ function TaskBoard() {
                 />
               </div>
 
-              <div>
+              {/* <div>
                 <label className="block text-sm font-medium text-gray-700">Project</label>
                 {isAddingNewProject ? (
                   <div className="mt-1 flex space-x-2">
@@ -450,7 +453,7 @@ function TaskBoard() {
                     <option value="new">+ Add New Project</option>
                   </select>
                 )}
-              </div>
+              </div> */}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700">Priority</label>

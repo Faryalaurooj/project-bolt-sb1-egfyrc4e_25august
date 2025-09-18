@@ -76,8 +76,8 @@ function FocusedViewModal({ isOpen, onClose, contact, onNoteSaved, onActionItemS
     policy_type: '',
     company: '',
     policy_number: '',
-    effective_date: '',
-    expiration_date: '',
+    effective_date: null,
+    expiration_date: null,
     premium: ''
   });
 
@@ -291,8 +291,8 @@ function FocusedViewModal({ isOpen, onClose, contact, onNoteSaved, onActionItemS
         policy_type: '',
         company: '',
         policy_number: '',
-        effective_date: '',
-        expiration_date: '',
+        effective_date: null,
+        expiration_date: null,
         premium: ''
       });
       
@@ -751,66 +751,70 @@ function FocusedViewModal({ isOpen, onClose, contact, onNoteSaved, onActionItemS
                         {/* Add Note Section */}
                         <div className="bg-white border rounded-lg p-4">
                           <h3 className="text-lg font-semibold text-gray-900 mb-4">Add Note</h3>
-                          <div className="space-y-4">
-                            <input
-                              type="text"
-                              value={noteTitle}
-                              onChange={(e) => setNoteTitle(e.target.value)}
-                              placeholder="Note title..."
-                              className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                            />
-                            <ReactQuill
-                              value={noteContent}
-                              onChange={setNoteContent}
-                              className="h-32 mb-12"
-                              placeholder="Enter note content..."
-                            />
-                            <div className="flex items-center justify-between">
-                              <label className="flex items-center space-x-2">
-                                <input
-                                  type="checkbox"
-                                  checked={isActionItem}
-                                  onChange={(e) => setIsActionItem(e.target.checked)}
-                                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                />
-                                <span className="text-sm text-gray-700">Mark as action item</span>
-                              </label>
-                              <button
-                                onClick={handleSaveNote}
-                                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                              >
-                                Save Note
-                              </button>
+                          <form onSubmit={(e) => { e.preventDefault(); handleSaveNote(); }}>
+                            <div className="space-y-4">
+                              <input
+                                type="text"
+                                value={noteTitle}
+                                onChange={(e) => setNoteTitle(e.target.value)}
+                                placeholder="Note title..."
+                                className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                              />
+                              <ReactQuill
+                                value={noteContent}
+                                onChange={setNoteContent}
+                                className="h-32 mb-12"
+                                placeholder="Enter note content..."
+                              />
+                              <div className="flex items-center justify-between">
+                                <label className="flex items-center space-x-2">
+                                  <input
+                                    type="checkbox"
+                                    checked={isActionItem}
+                                    onChange={(e) => setIsActionItem(e.target.checked)}
+                                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                  />
+                                  <span className="text-sm text-gray-700">Mark as action item</span>
+                                </label>
+                                <button
+                                  type="submit"
+                                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                                >
+                                  Save Note
+                                </button>
+                              </div>
                             </div>
-                          </div>
+                          </form>
                         </div>
 
                         {/* Log Phone Call Section */}
                         <div className="bg-white border rounded-lg p-4">
                           <h3 className="text-lg font-semibold text-gray-900 mb-4">Log Phone Call</h3>
-                          <div className="space-y-4">
-                            <input
-                              type="text"
-                              value={callTitle}
-                              onChange={(e) => setCallTitle(e.target.value)}
-                              placeholder="Call summary..."
-                              className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                            />
-                            <ReactQuill
-                              value={callContent}
-                              onChange={setCallContent}
-                              className="h-32 mb-12"
-                              placeholder="Enter call details..."
-                            />
-                            <div className="flex justify-end">
-                              <button
-                                onClick={handleSavePhoneCall}
-                                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
-                              >
-                                Log Phone Call
-                              </button>
+                          <form onSubmit={(e) => { e.preventDefault(); handleSavePhoneCall(); }}>
+                            <div className="space-y-4">
+                              <input
+                                type="text"
+                                value={callTitle}
+                                onChange={(e) => setCallTitle(e.target.value)}
+                                placeholder="Call summary..."
+                                className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                              />
+                              <ReactQuill
+                                value={callContent}
+                                onChange={setCallContent}
+                                className="h-32 mb-12"
+                                placeholder="Enter call details..."
+                              />
+                              <div className="flex justify-end">
+                                <button
+                                  type="submit"
+                                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+                                >
+                                  Log Phone Call
+                                </button>
+                              </div>
                             </div>
-                          </div>
+                          </form>
                         </div>
 
                         {/* Text Messages Section */}
@@ -1122,7 +1126,8 @@ function FocusedViewModal({ isOpen, onClose, contact, onNoteSaved, onActionItemS
                           {/* Add New Policy Form */}
                           <div className="border-t pt-6">
                             <h4 className="font-medium text-gray-900 mb-4">Add New Policy</h4>
-                            <div className="grid grid-cols-2 gap-4">
+                            <form onSubmit={(e) => { e.preventDefault(); handleSavePolicy(); }}>
+                              <div className="grid grid-cols-2 gap-4">
                               <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Policy Type *</label>
                                 <select
@@ -1194,15 +1199,16 @@ function FocusedViewModal({ isOpen, onClose, contact, onNoteSaved, onActionItemS
                               </div>
                             </div>
 
-                            <div className="flex justify-end mt-4">
-                              <button
-                                onClick={handleSavePolicy}
-                                disabled={!newPolicy.policy_type || !newPolicy.company}
-                                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                              >
-                                Add Policy
-                              </button>
-                            </div>
+                              <div className="flex justify-end mt-4">
+                                <button
+                                  type="submit"
+                                  disabled={!newPolicy.policy_type || !newPolicy.company}
+                                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  Add Policy
+                                </button>
+                              </div>
+                            </form>
                           </div>
                         </div>
 

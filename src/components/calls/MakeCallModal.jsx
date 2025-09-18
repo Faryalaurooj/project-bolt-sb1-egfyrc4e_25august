@@ -5,7 +5,7 @@ import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
 import { useAuth } from '../../context/AuthContext';
 import { createPhoneCall } from '../../services/api';
-import { makeWebRTCCall, endWebRTCCall, isWebRTCSupported, getWebRTCStatus, getCurrentCall } from '../../services/webrtcService';
+import { makeWebRTCCall, makeDirectCall, endWebRTCCall, isWebRTCSupported, getWebRTCStatus, getCurrentCall } from '../../services/webrtcService';
 import CallControlPanel from './CallControlPanel';
 import ContactSelectModal from '../contacts/ContactSelectModal';
 import { useToast } from '../../hooks/useToast';
@@ -25,8 +25,6 @@ function MakeCallModal({ isOpen, onClose, onCallSaved }) {
   const [callOutcome, setCallOutcome] = useState('');
   const [callStartTime, setCallStartTime] = useState(null);
   const [isCallActive, setIsCallActive] = useState(false);
-  const [webrtcStatus, setWebrtcStatus] = useState('checking');
-  const [webrtcSupported, setWebrtcSupported] = useState(false);
   const [showCallControls, setShowCallControls] = useState(false);
 
   const modules = {
@@ -47,27 +45,22 @@ function MakeCallModal({ isOpen, onClose, onCallSaved }) {
     'Call back requested'
   ];
 
-  // WebRTC Support Check
-  useEffect(() => {
-    checkWebRTCSupport();
-  }, []);
-
-  const checkWebRTCSupport = async () => {
+  // Make direct call using GoTo Connect API
+  const initiateDirectCall = async (phoneNumber, contactName) => {
     try {
-      setWebrtcStatus('checking');
+      console.log("📞 Making direct call via GoTo Connect API...");
+      const callResult = await makeDirectCall(phoneNumber, contactName);
       
-      if (isWebRTCSupported()) {
-        setWebrtcSupported(true);
-        setWebrtcStatus('supported');
-        console.log('✅ WebRTC is supported in this browser');
+      if (callResult.success) {
+        console.log('✅ Direct call successful via GoTo Connect API:', callResult);
+        return callResult;
       } else {
-        setWebrtcSupported(false);
-        setWebrtcStatus('not-supported');
-        console.log('❌ WebRTC is not supported in this browser');
+        throw new Error('Direct call failed');
       }
+      
     } catch (error) {
-      console.error('❌ WebRTC support check failed:', error);
-      setWebrtcStatus('error');
+      console.error('❌ Direct call failed:', error);
+      throw new Error(`Direct call failed: ${error.message}. Please check your network connection.`);
     }
   };
 
@@ -110,40 +103,25 @@ function MakeCallModal({ isOpen, onClose, onCallSaved }) {
     const contactName = selectedContact.name || `${selectedContact.first_name} ${selectedContact.last_name}`;
     
          try {
-      // Use WebRTC via Jive API
-      if (webrtcStatus === 'supported' && webrtcSupported) {
-        console.log('🌐 Making call via WebRTC Jive API...');
-        const callResult = await initiateWebRTCCall(phoneNumber, contactName);
-        
-        // Call was successful via WebRTC
-        setTitle(`Call to ${contactName} (WebRTC)`);
-        setContent(`🌐 Call initiated via WebRTC Jive API via Backend\n👤 Contact: ${contactName}\n📱 Phone: ${phoneNumber}\n⏰ Call started: ${startTime.toLocaleString()}\n🔧 Device ID: ${callResult.data?.deviceId || 'Generated'}\n🌐 Call Method: WebRTC Browser Calling (No CORS)\n\n--- Call Notes ---\n`);
-        
-        showSuccess('🌐 Call initiated successfully via WebRTC Backend!');
-        
-        // Show call controls
-        setShowCallControls(true);
-      } else {
-        // WebRTC not available - show specific error based on status
-        let errorMessage = '';
-        if (webrtcStatus === 'not-supported') {
-          errorMessage = 'WebRTC is not supported in this browser. Please use a modern browser like Chrome, Firefox, or Safari.';
-        } else if (webrtcStatus === 'error') {
-          errorMessage = 'WebRTC support check failed. Please refresh the page and try again.';
-        } else if (webrtcStatus === 'checking') {
-          errorMessage = 'WebRTC status is still being checked. Please wait and try again.';
-        } else {
-          errorMessage = 'WebRTC is not available. Please check your browser support and microphone permissions.';
-          }
-          throw new Error(errorMessage);
-        }
+      // Use Direct Call via GoTo Connect API
+      console.log('📞 Making call via GoTo Connect Direct API...');
+      const callResult = await initiateDirectCall(phoneNumber, contactName);
+      
+      // Call was successful via Direct API
+      setTitle(`Call to ${contactName} (Direct)`);
+      setContent(`📞 Call initiated via GoTo Connect Direct API\n👤 Contact: ${contactName}\n📱 Phone: ${phoneNumber}\n⏰ Call started: ${startTime.toLocaleString()}\n🔧 Call ID: ${callResult.callId || 'Generated'}\n📞 Call Method: GoTo Connect Direct Calling\n\n--- Call Notes ---\n`);
+      
+      showSuccess('📞 Call initiated successfully via GoTo Connect!');
+      
+      // Show call controls
+      setShowCallControls(true);
                    } catch (error) {
-      console.error('❌ WebRTC call failed:', error);
-      setError(`WebRTC call failed: ${error.message}`);
+      console.error('❌ Direct call failed:', error);
+      setError(`Direct call failed: ${error.message}`);
         
-      // WebRTC call failed
+      // Direct call failed
         setTitle(`Call to ${contactName} (Failed)`);
-      setContent(`❌ Call failed via WebRTC Jive API via Backend\n👤 Contact: ${contactName}\n📱 Phone: ${phoneNumber}\n⏰ Attempted: ${startTime.toLocaleString()}\n🌐 Call Method: WebRTC Browser Calling via Backend (Failed)\n❌ Error: ${error.message}\n\n--- Call Notes ---\n`);
+      setContent(`❌ Call failed via GoTo Connect Direct API\n👤 Contact: ${contactName}\n📱 Phone: ${phoneNumber}\n⏰ Attempted: ${startTime.toLocaleString()}\n📞 Call Method: GoTo Connect Direct Calling (Failed)\n❌ Error: ${error.message}\n\n--- Call Notes ---\n`);
       }
     
     // Start a timer to track call duration
@@ -165,12 +143,12 @@ function MakeCallModal({ isOpen, onClose, onCallSaved }) {
       setCallDuration(durationMinutes.toString());
       setIsCallActive(false);
       
-      // End WebRTC call
+      // End direct call
       try {
         await endWebRTCCall();
-        console.log('✅ WebRTC call ended successfully');
+        console.log('✅ Direct call ended successfully');
       } catch (error) {
-        console.error('❌ Error ending WebRTC call:', error);
+        console.error('❌ Error ending direct call:', error);
       }
       
       // Update content with call end time
@@ -333,12 +311,11 @@ function MakeCallModal({ isOpen, onClose, onCallSaved }) {
                       <div className="space-y-3">
                         <button
                           onClick={handleCallNow}
-                          disabled={isCallActive || webrtcStatus !== 'supported'}
+                          disabled={isCallActive}
                           className="w-full flex items-center justify-center px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <FiPhone className="mr-2" />
                           {isCallActive ? 'Call in Progress...' : 
-                           webrtcStatus !== 'supported' ? 'WebRTC Not Ready' :
                            `Call ${selectedContact.name || `${selectedContact.first_name} ${selectedContact.last_name}`}`}
                         </button>
                         
@@ -351,60 +328,16 @@ function MakeCallModal({ isOpen, onClose, onCallSaved }) {
                            </button>
                          )}
                          
-                                                   {/* WebRTC Status Display */}
+                                                   {/* Direct Call Status Display */}
                           <div className="text-center p-3 rounded-lg border">
-                            {webrtcStatus === 'checking' && (
-                              <div className="bg-yellow-50 border-yellow-200">
-                                <p className="text-xs text-yellow-700 font-medium">
-                                  🔍 Checking WebRTC support...
-                                </p>
-                                <p className="text-xs text-yellow-600 mt-1">
-                                  Please wait while we verify browser compatibility
-                                </p>
-                              </div>
-                            )}
-                            {webrtcStatus === 'supported' && (
-                              <div className="bg-green-50 border-green-200">
-                                <p className="text-xs text-green-700 font-medium">
-                                  ✅ WebRTC ready
-                                </p>
-                                <p className="text-xs text-green-600 mt-1">
-                                  Browser calling via Jive API via Backend (No CORS)
-                                </p>
-                              </div>
-                            )}
-                            {webrtcStatus === 'not-supported' && (
-                              <div className="bg-red-50 border-red-200">
-                                <p className="text-xs text-red-700 font-medium">
-                                  ❌ WebRTC not supported
-                                </p>
-                                <p className="text-xs text-red-600 mt-1">
-                                  Please use Chrome, Firefox, or Safari
-                                </p>
-                                <button
-                                  onClick={checkWebRTCSupport}
-                                  className="text-xs text-red-600 hover:text-red-700 underline mt-1"
-                                >
-                                  Retry Check
-                                </button>
-                              </div>
-                            )}
-                            {webrtcStatus === 'error' && (
-                              <div className="bg-orange-50 border-orange-200">
-                                <p className="text-xs text-orange-700 font-medium">
-                                  ⚠️ WebRTC check failed
-                                </p>
-                                <p className="text-xs text-orange-600 mt-1">
-                                  Please refresh the page and try again
-                                </p>
-                                <button
-                                  onClick={checkWebRTCSupport}
-                                  className="text-xs text-orange-600 hover:text-orange-700 underline mt-1"
-                                >
-                                  Retry Check
-                                </button>
-                              </div>
-                            )}
+                            <div className="bg-green-50 border-green-200">
+                              <p className="text-xs text-green-700 font-medium">
+                                ✅ GoTo Connect Ready
+                              </p>
+                              <p className="text-xs text-green-600 mt-1">
+                                Direct calling via GoTo Connect API
+                              </p>
+                            </div>
                           </div>
                       </div>
                       <p className="text-xs text-green-700 mt-2 text-center">

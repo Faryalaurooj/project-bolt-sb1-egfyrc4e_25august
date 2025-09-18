@@ -150,6 +150,59 @@ class WebRTCService {
     }
   }
 
+  // Make a direct call using GoTo Connect API via backend
+  async makeDirectCall(phoneNumber, contactName) {
+    try {
+      console.log('📞 Making direct GoTo Connect call via backend...');
+      
+      // Make API call to our backend for direct GoTo Connect call
+      const response = await fetch('/api/goto-connect/direct-call', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          phoneNumber,
+          contactName
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`Backend API error: ${response.status} - ${errorData.error || response.statusText}`);
+      }
+
+      const result = await response.json();
+      
+      console.log('✅ Direct GoTo Connect call initiated successfully via backend:', result);
+      
+      this.isCallActive = true;
+      
+      // Set up call flow management
+      const callId = result.callId || result.data?.callId;
+      if (callId) {
+        callFlowService.setCall(callId, contactName, phoneNumber);
+      }
+      
+      return {
+        success: true,
+        callId: callId,
+        data: result,
+        message: `Direct call to ${contactName} initiated successfully via GoTo Connect`
+      };
+
+    } catch (error) {
+      console.error('❌ Direct call failed:', error);
+      this.isCallActive = false;
+      
+      return {
+        success: false,
+        error: error.message,
+        message: `Direct call failed: ${error.message}`
+      };
+    }
+  }
+
   // Make a call using Jive WebRTC API via backend (no CORS issues)
   async makeCall(phoneNumber, contactName) {
     try {
@@ -298,6 +351,9 @@ const webrtcService = new WebRTCService();
 // Export individual functions
 export const makeWebRTCCall = (phoneNumber, contactName) => 
   webrtcService.makeCall(phoneNumber, contactName);
+
+export const makeDirectCall = (phoneNumber, contactName) => 
+  webrtcService.makeDirectCall(phoneNumber, contactName);
 
 export const endWebRTCCall = () => 
   webrtcService.endCall();

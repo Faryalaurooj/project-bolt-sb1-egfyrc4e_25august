@@ -14,6 +14,7 @@ import chatsRoutes from './routes/chats.js';
 import companiesRoutes from './routes/companies.js';
 import gotoConnectRoutes from './routes/goto-connect.js';
 import jiveWebrtcRoutes, { initializeWebSocket } from './routes/jive-webrtc.js';
+import emailDraftsRoutes from './routes/email-drafts.js';
 dotenv.config();
 
 const app = express();
@@ -35,6 +36,7 @@ app.use('/api/chats', chatsRoutes);
 app.use('/api/companies', companiesRoutes);
 app.use('/api/goto-connect', gotoConnectRoutes);
 app.use('/api/jive-webrtc', jiveWebrtcRoutes);
+app.use('/api/email-drafts', emailDraftsRoutes);
 
 // Test endpoint
 app.get('/api/health', (req, res) => {

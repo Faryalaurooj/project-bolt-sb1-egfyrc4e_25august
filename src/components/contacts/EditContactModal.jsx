@@ -1,13 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Dialog } from '@headlessui/react';
-import { FiX, FiPlus, FiDownload, FiTrash2 } from 'react-icons/fi';
-import { useToast } from '../../hooks/useToast';
-import { getPolicyDocumentsByContactId, createPolicyDocument, deletePolicyDocument } from '../../services/api';
+import { FiX, FiPlus, FiChevronDown, FiFileText, FiPaperclip, FiUpload, FiDownload, FiTrash2, FiEye, FiEdit3, FiEdit2, FiUser, FiUsers, FiBriefcase } from 'react-icons/fi';
+import { updateContact, createHouseholdMember, createPolicyDocument, getCompanies, createPolicy, getPoliciesByContactIdSupabase } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
 function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
-  const { showSuccess, showError } = useToast();
-  
-  const [activeTab, setActiveTab] = useState(0);
+  const { user } = useAuth();
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -21,10 +19,15 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
     homePhoneNumber: '',
     workNumber: '',
     email: '',
+    email2: '',
     address: '',
     city: '',
     state: '',
     zip: '',
+    mailingAddress: '',
+    mailingCity: '',
+    mailingState: '',
+    mailingZip: '',
     customerType: 'Individual',
     accountType: 'Standard',
     contactStatus: 'Active',
@@ -34,6 +37,16 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
     keyedBy: '',
     office: '',
     source: '',
+    driversLicense: '',
+    dlState: '',
+    dateLicensed: null,
+    preferredContactMethod: '',
+    doNotEmail: false,
+    doNotText: false,
+    doNotCall: false,
+    doNotMail: false,
+    doNotMarket: false,
+    doNotCaptureEmail: false,
     spouse_first_name: '',
     spouse_last_name: '',
     spouse_email: '',
@@ -45,40 +58,141 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [activeTab, setActiveTab] = useState(0);
   const [householdMembers, setHouseholdMembers] = useState([]);
   const [policyDocuments, setPolicyDocuments] = useState([]);
-  const [newPolicyDocuments, setNewPolicyDocuments] = useState([]);
-  const [loadingDocuments, setLoadingDocuments] = useState(false);
+  const [attachments, setAttachments] = useState([]);
+  const [companies, setCompanies] = useState([]);
+  const [policyData, setPolicyData] = useState({
+    policyEntry: 'New Business',
+    company: '',
+    product: '',
+    paymentPlan: '',
+    policyNumber: '',
+    purePremium: '',
+    paymentDueDay: '',
+    effDate: '09/11/2025',
+    expDate: '',
+    source: '',
+    subSource: '',
+    policyAgentOfRecord: 'Alisha Hanif',
+    policyCSR: 'Alisha Hanif',
+    priorPolicyNumber: '',
+    memo: '',
+    commissionSplit: '100.00%'
+  });
+  const [dropdownsOpen, setDropdownsOpen] = useState({
+    policyEntry: false,
+    company: false,
+    product: false,
+    paymentPlan: false,
+    source: false,
+    subSource: false,
+    policyAgentOfRecord: false,
+    policyCSR: false
+  });
 
-  // Initialize form data when contact changes
+  const handleChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value
+    }));
+  };
+
+  const handlePolicyChange = (field, value) => {
+    setPolicyData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const toggleDropdown = (field) => {
+    setDropdownsOpen(prev => ({ ...prev, [field]: !prev[field] }));
+  };
+
+  const handleDropdownSelect = (field, value) => {
+    handlePolicyChange(field, value);
+    setDropdownsOpen(prev => ({ ...prev, [field]: false }));
+  };
+
+  const handleAttachmentUpload = (e) => {
+    const files = Array.from(e.target.files);
+    if (files.length > 0) {
+      const newAttachments = files.map(file => ({
+        id: Date.now() + Math.random(),
+        name: file.name,
+        type: file.type.split('/')[1]?.toUpperCase() || 'FILE',
+        size: `${(file.size / 1024).toFixed(1)} KB`,
+        file: file,
+        uploadedDate: new Date().toISOString().split('T')[0],
+        category: 'General'
+      }));
+      setAttachments(prev => [...prev, ...newAttachments]);
+    }
+    e.target.value = '';
+  };
+
+  const handleAttachmentDelete = (id) => {
+    setAttachments(prev => prev.filter(attachment => attachment.id !== id));
+  };
+
+  // Populate form data when contact changes
   useEffect(() => {
     if (contact) {
-      setFormData({
-        firstName: contact.firstName || contact.first_name || '',
-        lastName: contact.lastName || contact.last_name || '',
-        dateOfBirth: contact.dateOfBirth || contact.date_of_birth || null,
+      console.log('EditContactModal: Contact data received:', contact);
+      console.log('EditContactModal: Contact keys:', Object.keys(contact));
+      console.log('EditContactModal: Specific field values:', {
+        mailing_address: contact.mailing_address,
+        mailing_city: contact.mailing_city,
+        mailing_state: contact.mailing_state,
+        mailing_zip: contact.mailing_zip,
+        customer_type: contact.customer_type,
+        account_type: contact.account_type,
+        contact_status: contact.contact_status,
+        drivers_license: contact.drivers_license,
+        dl_state: contact.dl_state,
+        date_licensed: contact.date_licensed,
+        preferred_contact_method: contact.preferred_contact_method
+      });
+      const newFormData = {
+        firstName: contact.first_name || contact.firstName || '',
+        lastName: contact.last_name || contact.lastName || '',
+        dateOfBirth: contact.date_of_birth || contact.dateOfBirth || null,
         gender: contact.gender || '',
-        maritalStatus: contact.maritalStatus || contact.marital_status || '',
+        maritalStatus: contact.marital_status || contact.maritalStatus || '',
         language: contact.language || 'English',
-        ssnTaxId: contact.ssnTaxId || contact.ssn_tax_id || '',
-        phone: contact.phone || '',
-        cellNumber: contact.cellNumber || contact.cell_number || '',
-        homePhoneNumber: contact.homePhoneNumber || contact.home_phone_number || '',
-        workNumber: contact.workNumber || contact.work_number || '',
+        ssnTaxId: contact.ssn_tax_id || contact.ssnTaxId || '',
+        phone: contact.phone || contact.phone_number || '',
+        cellNumber: contact.cell_number || contact.cellNumber || '',
+        homePhoneNumber: contact.home_phone_number || contact.homePhoneNumber || '',
+        workNumber: contact.work_number || contact.workNumber || '',
         email: contact.email || '',
+        email2: contact.email2 || '',
         address: contact.address || '',
         city: contact.city || '',
         state: contact.state || '',
         zip: contact.zip || '',
-        customerType: contact.customerType || contact.customer_type || 'Individual',
-        accountType: contact.accountType || contact.account_type || 'Standard',
-        contactStatus: contact.contactStatus || contact.contact_status || 'Active',
-        customerSubStatus: contact.customerSubStatus || contact.customer_sub_status || '',
-        customerAgentOfRecord: contact.customerAgentOfRecord || contact.customer_agent_of_record || '',
-        customerCsr: contact.customerCsr || contact.customer_csr || '',
-        keyedBy: contact.keyedBy || contact.keyed_by || '',
+        mailingAddress: contact.mailing_address || contact.mailingAddress || '',
+        mailingCity: contact.mailing_city || contact.mailingCity || '',
+        mailingState: contact.mailing_state || contact.mailingState || '',
+        mailingZip: contact.mailing_zip || contact.mailingZip || '',
+        customerType: contact.customer_type || contact.customerType || 'Individual',
+        accountType: contact.account_type || contact.accountType || 'Standard',
+        contactStatus: contact.contact_status || contact.contactStatus || 'Active',
+        customerSubStatus: contact.customer_sub_status || contact.customerSubStatus || '',
+        customerAgentOfRecord: contact.customer_agent_of_record || contact.customerAgentOfRecord || '',
+        customerCsr: contact.customer_csr || contact.customerCsr || '',
+        keyedBy: contact.keyed_by || contact.keyedBy || '',
         office: contact.office || '',
         source: contact.source || '',
+        driversLicense: contact.drivers_license || contact.driversLicense || '',
+        dlState: contact.dl_state || contact.dlState || '',
+        dateLicensed: contact.date_licensed || contact.dateLicensed || null,
+        preferredContactMethod: contact.preferred_contact_method || contact.preferredContactMethod || '',
+        doNotEmail: contact.do_not_email || contact.doNotEmail || false,
+        doNotText: contact.do_not_text || contact.doNotText || false,
+        doNotCall: contact.do_not_call || contact.doNotCall || false,
+        doNotMail: contact.do_not_mail || contact.doNotMail || false,
+        doNotMarket: contact.do_not_market || contact.doNotMarket || false,
+        doNotCaptureEmail: contact.do_not_capture_email || contact.doNotCaptureEmail || false,
         spouse_first_name: contact.spouse_first_name || '',
         spouse_last_name: contact.spouse_last_name || '',
         spouse_email: contact.spouse_email || '',
@@ -87,103 +201,210 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
         company_name: contact.company_name || '',
         relationship_type: contact.relationship_type || 'employee',
         notes: contact.notes || ''
-      });
+      };
       
-      // Load policy documents for this contact
-      loadPolicyDocuments();
+      console.log('EditContactModal: Setting new form data:', newFormData);
+      setFormData(newFormData);
+      console.log('EditContactModal: Form data populated:', {
+        mailingAddress: contact.mailing_address,
+        mailingCity: contact.mailing_city,
+        mailingState: contact.mailing_state,
+        mailingZip: contact.mailing_zip,
+        customerType: contact.customer_type,
+        accountType: contact.account_type,
+        contactStatus: contact.contact_status,
+        driversLicense: contact.drivers_license,
+        dlState: contact.dl_state,
+        dateLicensed: contact.date_licensed,
+        preferredContactMethod: contact.preferred_contact_method,
+        phone: contact.phone,
+        cell_number: contact.cell_number,
+        home_phone_number: contact.home_phone_number,
+        work_number: contact.work_number,
+        customerSubStatus: contact.customer_sub_status,
+        customerAgentOfRecord: contact.customer_agent_of_record,
+        customerCsr: contact.customer_csr,
+        keyedBy: contact.keyed_by,
+        office: contact.office,
+        source: contact.source
+      });
+      console.log('EditContactModal: Final formData state:', formData);
     }
   }, [contact]);
 
-  // Load policy documents for the contact
-  const loadPolicyDocuments = async () => {
-    if (!contact?.id) return;
-    
-    setLoadingDocuments(true);
-    try {
-      const documents = await getPolicyDocumentsByContactId(contact.id);
-      setPolicyDocuments(documents || []);
-    } catch (error) {
-      console.error('Error loading policy documents:', error);
-      showError('Failed to load policy documents');
-    } finally {
-      setLoadingDocuments(false);
+  // Debug formData changes
+  useEffect(() => {
+    console.log('EditContactModal: formData changed:', formData);
+  }, [formData]);
+
+  // Fetch companies and policy data when modal opens
+  useEffect(() => {
+    if (isOpen && contact) {
+      const fetchData = async () => {
+        try {
+          // Fetch companies
+          const companiesData = await getCompanies();
+          setCompanies(companiesData);
+          
+          // Load existing policy data
+          try {
+            const policies = await getPoliciesByContactIdSupabase(contact.id);
+            if (policies && policies.length > 0) {
+              const latestPolicy = policies[0];
+              console.log('EditContactModal: Loading policy data:', latestPolicy);
+              setPolicyData({
+                policyEntry: latestPolicy.policy_entry || 'New Business',
+                company: latestPolicy.company || '',
+                product: latestPolicy.product || '',
+                paymentPlan: latestPolicy.payment_plan || '',
+                policyNumber: latestPolicy.policy_number || '',
+                purePremium: latestPolicy.premium?.toString() || latestPolicy.pure_premium || '',
+                paymentDueDay: latestPolicy.payment_due_day?.toString() || '',
+                effDate: latestPolicy.eff_date || '09/11/2025',
+                expDate: latestPolicy.exp_date || '',
+                source: latestPolicy.source || '',
+                subSource: latestPolicy.sub_source || '',
+                policyAgentOfRecord: latestPolicy.policy_agent_of_record || 'Alisha Hanif',
+                policyCSR: latestPolicy.policy_csr || 'Alisha Hanif',
+                priorPolicyNumber: latestPolicy.prior_policy_number || '',
+                memo: latestPolicy.memo || '',
+                commissionSplit: latestPolicy.commission_split || '100.00%'
+              });
+            }
+          } catch (policyError) {
+            console.error('Error loading policy data:', policyError);
+          }
+        } catch (error) {
+          console.error('Error fetching data:', error);
+        }
+      };
+      fetchData();
     }
-  };
-
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
-  };
-
-  // Handle file upload for new policy documents
-  const handleFileUpload = (e) => {
-    const files = Array.from(e.target.files);
-    const newFiles = files.map(file => ({ file, id: Date.now() + Math.random() }));
-    setNewPolicyDocuments(prev => [...prev, ...newFiles]);
-  };
-
-  // Remove new policy document before upload
-  const removeNewPolicyDocument = (id) => {
-    setNewPolicyDocuments(prev => prev.filter(doc => doc.id !== id));
-  };
-
-  // Delete existing policy document
-  const handleDeletePolicyDocument = async (documentId) => {
-    if (!window.confirm('Are you sure you want to delete this policy document?')) return;
-    
-    try {
-      await deletePolicyDocument(documentId);
-      setPolicyDocuments(prev => prev.filter(doc => doc.id !== documentId));
-      showSuccess('Policy document deleted successfully');
-    } catch (error) {
-      console.error('Error deleting policy document:', error);
-      showError('Failed to delete policy document');
-    }
-  };
-
-  // Download policy document
-  const handleDownloadPolicyDocument = (document) => {
-    const link = document.createElement('a');
-    link.href = document.file_url;
-    link.download = document.file_name;
-    link.target = '_blank';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
+  }, [isOpen, contact]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError('');
 
+    // Basic validation
+    if (!formData.firstName.trim() || !formData.lastName.trim()) {
+      setError('First name and last name are required');
+      setLoading(false);
+      return;
+    }
+
+    if (formData.email && !/\S+@\S+\.\S+/.test(formData.email)) {
+      setError('Please enter a valid email address');
+      setLoading(false);
+      return;
+    }
+
     try {
-      // Upload new policy documents if any
-      if (newPolicyDocuments.length > 0 && contact?.id) {
-        for (const doc of newPolicyDocuments) {
-          await createPolicyDocument(contact.id, doc.file);
+      const updatedContact = await updateContact(contact.id, {
+        first_name: formData.firstName,
+        last_name: formData.lastName,
+        date_of_birth: formData.dateOfBirth || null,
+        gender: formData.gender || null,
+        marital_status: formData.maritalStatus || null,
+        language: formData.language,
+        ssn_tax_id: formData.ssnTaxId || null,
+        email: formData.email,
+        email2: formData.email2 || null,
+        phone: formData.phone || '',
+        cell_number: formData.cellNumber || null,
+        home_phone_number: formData.homePhoneNumber || null,
+        work_number: formData.workNumber || null,
+        address: formData.address,
+        city: formData.city,
+        state: formData.state,
+        zip: formData.zip,
+        mailing_address: formData.mailingAddress || '',
+        mailing_city: formData.mailingCity || '',
+        mailing_state: formData.mailingState || '',
+        mailing_zip: formData.mailingZip || '',
+        customer_type: formData.customerType,
+        account_type: formData.accountType,
+        contact_status: formData.contactStatus,
+        customer_sub_status: formData.customerSubStatus || '',
+        customer_agent_of_record: formData.customerAgentOfRecord || '',
+        customer_csr: formData.customerCsr || '',
+        keyed_by: formData.keyedBy || '',
+        office: formData.office || '',
+        source: formData.source || '',
+        drivers_license: formData.driversLicense || '',
+        dl_state: formData.dlState || '',
+        date_licensed: formData.dateLicensed || null,
+        preferred_contact_method: formData.preferredContactMethod || '',
+        do_not_email: formData.doNotEmail,
+        do_not_text: formData.doNotText,
+        do_not_call: formData.doNotCall,
+        do_not_mail: formData.doNotMail,
+        do_not_market: formData.doNotMarket,
+        do_not_capture_email: formData.doNotCaptureEmail,
+        notes: formData.notes,
+        spouse_first_name: formData.spouse_first_name,
+        spouse_last_name: formData.spouse_last_name,
+        spouse_email: formData.spouse_email,
+        spouse_phone: formData.spouse_phone,
+        spouse_date_of_birth: formData.spouse_date_of_birth,
+        company_name: formData.company_name || '',
+        relationship_type: formData.relationship_type || 'employee'
+      });
+
+      // Create household members if any
+      if (householdMembers.length > 0) {
+        for (const member of householdMembers) {
+          if (member.first_name && member.last_name) {
+            await createHouseholdMember({
+              ...member,
+              contact_id: contact.id
+            });
+          }
         }
-        // Reload policy documents after upload
-        await loadPolicyDocuments();
       }
 
-      const updatedContact = {
-        ...contact,
-        ...formData,
-        id: contact.id
-      };
+      // Create policy if policy number is provided and not empty
+      if (policyData.policyNumber && policyData.policyNumber.trim() !== '') {
+        try {
+          console.log('Creating policy for contact:', contact.id);
+          await createPolicy({
+            ...policyData,
+            created_by: user.id,
+            contact_id: contact.id
+          });
+          console.log('Policy created successfully');
+        } catch (policyError) {
+          console.error('Failed to create policy:', policyError);
+          setError(`Failed to create policy: ${policyError.message}`);
+          setLoading(false);
+          return;
+        }
+      }
 
-      // Call the parent component's handler
-      await onContactUpdated(updatedContact);
-      
-      showSuccess('Contact updated successfully!');
+      // Upload policy documents if any
+      if (policyDocuments.length > 0) {
+        console.log('Uploading policy documents:', policyDocuments.length);
+        for (const doc of policyDocuments) {
+          try {
+            console.log('Uploading document:', doc.file.name);
+            await createPolicyDocument(contact.id, doc.file);
+            console.log('Document uploaded successfully:', doc.file.name);
+          } catch (docError) {
+            console.error('Failed to upload document:', doc.file.name, docError);
+            setError(`Failed to upload document "${doc.file.name}": ${docError.message}`);
+            setLoading(false);
+            return;
+          }
+        }
+      }
+
       onClose();
+      if (onContactUpdated) { // Call the callback if provided
+        onContactUpdated(updatedContact);
+      }
     } catch (err) {
       setError(err.message);
-      showError('Failed to update contact. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -198,62 +419,66 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
       <div className="flex min-h-screen items-center justify-center">
         <Dialog.Overlay className="fixed inset-0 bg-black opacity-30" />
 
-        <div className="relative bg-white w-full max-w-2xl mx-4 rounded-lg shadow-xl p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-xl font-semibold">EDIT CONTACT</h2>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-500">
-              <FiX className="h-6 w-6" />
-            </button>
+        <div className="relative bg-white w-full max-w-4xl mx-4 rounded-2xl shadow-2xl overflow-hidden">
+          {/* Enhanced Header */}
+          <div className="bg-gradient-to-r from-green-500 to-emerald-600 p-6">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center space-x-3">
+                <div className="w-12 h-12 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
+                  <FiEdit2 className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-white">Edit Contact</h2>
+                  <p className="text-green-100 text-sm">Update contact information and details</p>
+                </div>
+              </div>
+              <button 
+                onClick={onClose} 
+                className="text-white hover:text-gray-200 transition-colors p-2 hover:bg-white hover:bg-opacity-20 rounded-full"
+              >
+                <FiX className="h-6 w-6" />
+              </button>
+            </div>
           </div>
 
-          {error && (
+          <div className="p-6">
+            {error && (
             <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-md">
               {error}
             </div>
           )}
 
-          <div className="mb-6">
-            <div className="flex space-x-1 rounded-xl bg-blue-900/20 p-1">
-              <button
-                onClick={() => setActiveTab(0)}
-                className={`w-full rounded-lg py-2.5 text-sm font-medium leading-5 ${
-                  activeTab === 0
-                    ? 'bg-white text-blue-700 shadow'
-                    : 'text-blue-100 hover:bg-white/[0.12] hover:text-white'
-                }`}
-              >
-                Basic Info
-              </button>
-              <button
-                onClick={() => setActiveTab(1)}
-                className={`w-full rounded-lg py-2.5 text-sm font-medium leading-5 ${
-                  activeTab === 1
-                    ? 'bg-white text-blue-700 shadow'
-                    : 'text-blue-100 hover:bg-white/[0.12] hover:text-white'
-                }`}
-              >
-                Household
-              </button>
-              <button
-                onClick={() => setActiveTab(2)}
-                className={`w-full rounded-lg py-2.5 text-sm font-medium leading-5 ${
-                  activeTab === 2
-                    ? 'bg-white text-blue-700 shadow'
-                    : 'text-blue-100 hover:bg-white/[0.12] hover:text-white'
-                }`}
-              >
-                Company
-              </button>
-              <button
-                onClick={() => setActiveTab(3)}
-                className={`w-full rounded-lg py-2.5 text-sm font-medium leading-5 ${
-                  activeTab === 3
-                    ? 'bg-white text-blue-700 shadow'
-                    : 'text-blue-100 hover:bg-white/[0.12] hover:text-white'
-                }`}
-              >
-                Policies
-              </button>
+          <div className="mb-8">
+            <div className="flex space-x-1 rounded-xl bg-gradient-to-r from-gray-100 to-green-50 p-1 shadow-sm">
+              {[
+                { id: 0, name: 'Basic Info', icon: FiUser, description: 'Personal details' },
+                { id: 1, name: 'Household', icon: FiUsers, description: 'Family members' },
+                { id: 2, name: 'Company', icon: FiBriefcase, description: 'Work information' },
+                { id: 3, name: 'Policy', icon: FiFileText, description: 'Insurance details' },
+                { id: 4, name: 'Attachments', icon: FiPaperclip, description: 'Documents' }
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`w-full rounded-lg py-3 px-4 text-sm font-medium transition-all duration-200 flex items-center justify-center space-x-2 ${
+                    activeTab === tab.id
+                      ? 'bg-white text-green-700 shadow-md transform scale-105'
+                      : 'text-gray-600 hover:bg-white hover:bg-opacity-70 hover:text-green-600'
+                  }`}
+                >
+                  <tab.icon className="w-4 h-4" />
+                  <span>{tab.name}</span>
+                </button>
+              ))}
+            </div>
+            <div className="mt-2 text-center">
+              <p className="text-sm text-gray-500">
+                {activeTab === 0 && 'Update the contact\'s personal information and contact details'}
+                {activeTab === 1 && 'Modify spouse information and family members'}
+                {activeTab === 2 && 'Update company and work relationship details'}
+                {activeTab === 3 && 'Edit insurance policies and coverage information'}
+                {activeTab === 4 && 'Manage documents and attachments for this contact'}
+              </p>
             </div>
           </div>
 
@@ -263,7 +488,7 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                 {/* Personal Information Section */}
                 <div>
                   <h3 className="text-lg font-medium text-gray-900 mb-3">Personal Information</h3>
-                  
+
                   <div className="grid grid-cols-2 gap-4 mb-4">
                     <div>
                       <input
@@ -272,7 +497,7 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                         value={formData.firstName}
                         onChange={handleChange}
                         placeholder="First Name *"
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
                         required
                       />
                     </div>
@@ -283,7 +508,7 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                         value={formData.lastName}
                         onChange={handleChange}
                         placeholder="Last Name *"
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
                         required
                       />
                     </div>
@@ -295,9 +520,9 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                       <input
                         type="date"
                         name="dateOfBirth"
-                        value={formData.dateOfBirth || ''}
+                        value={formData.dateOfBirth}
                         onChange={handleChange}
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
                       />
                     </div>
                     <div>
@@ -306,7 +531,7 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                         name="gender"
                         value={formData.gender}
                         onChange={handleChange}
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
                       >
                         <option value="">Select Gender</option>
                         <option value="Male">Male</option>
@@ -324,7 +549,7 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                         name="maritalStatus"
                         value={formData.maritalStatus}
                         onChange={handleChange}
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
                       >
                         <option value="">Select Status</option>
                         <option value="Single">Single</option>
@@ -340,7 +565,7 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                         name="language"
                         value={formData.language}
                         onChange={handleChange}
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
                       >
                         <option value="English">English</option>
                         <option value="Spanish">Spanish</option>
@@ -358,7 +583,7 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                       value={formData.ssnTaxId}
                       onChange={handleChange}
                       placeholder="SSN/Tax ID"
-                      className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
                     />
                   </div>
                 </div>
@@ -366,7 +591,7 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                 {/* Contact Information Section */}
                 <div>
                   <h3 className="text-lg font-medium text-gray-900 mb-3">Contact Information</h3>
-                  
+
                   <div className="grid grid-cols-2 gap-4 mb-4">
                     <div>
                       <input
@@ -375,9 +600,35 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                         value={formData.email}
                         onChange={handleChange}
                         placeholder="Email"
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
                       />
                     </div>
+                    <div>
+                      <input
+                        type="email"
+                        name="email2"
+                        value={formData.email2}
+                        onChange={handleChange}
+                        placeholder="Email 2"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <input
+                        type="tel"
+                        name="phone"
+                        value={formData.phone}
+                        onChange={handleChange}
+                        placeholder="Phone"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 mb-4">
                     <div>
                       <input
                         type="tel"
@@ -385,7 +636,7 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                         value={formData.cellNumber}
                         onChange={handleChange}
                         placeholder="Cell Number"
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
                       />
                     </div>
                   </div>
@@ -398,7 +649,7 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                         value={formData.homePhoneNumber}
                         onChange={handleChange}
                         placeholder="Home Phone"
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
                       />
                     </div>
                     <div>
@@ -408,27 +659,16 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                         value={formData.workNumber}
                         onChange={handleChange}
                         placeholder="Work Number"
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
                       />
                     </div>
-                  </div>
-
-                  <div>
-                    <input
-                      type="tel"
-                      name="phone"
-                      value={formData.phone}
-                      onChange={handleChange}
-                      placeholder="Primary Phone"
-                      className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                    />
                   </div>
                 </div>
 
                 {/* Address Section */}
                 <div>
                   <h3 className="text-lg font-medium text-gray-900 mb-3">Address</h3>
-                  
+
                   <div>
                     <input
                       type="text"
@@ -448,7 +688,7 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                         value={formData.city}
                         onChange={handleChange}
                         placeholder="City"
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
                       />
                     </div>
                     <div>
@@ -458,7 +698,7 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                         value={formData.state}
                         onChange={handleChange}
                         placeholder="State"
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
                       />
                     </div>
                     <div>
@@ -468,7 +708,60 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                         value={formData.zip}
                         onChange={handleChange}
                         placeholder="ZIP"
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Mailing Address Section */}
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-3">Mailing Address</h3>
+
+                  <div>
+                    <input
+                      type="text"
+                      name="mailingAddress"
+                      value={formData.mailingAddress || ''}
+                      onChange={handleChange}
+                      placeholder="Mailing Address"
+                      className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 mb-4"
+                      key={`mailingAddress-${contact?.id || 'new'}`}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <input
+                        type="text"
+                        name="mailingCity"
+                        value={formData.mailingCity || ''}
+                        onChange={handleChange}
+                        placeholder="Mailing City"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
+                        key={`mailingCity-${contact?.id || 'new'}`}
+                      />
+                    </div>
+                    <div>
+                      <input
+                        type="text"
+                        name="mailingState"
+                        value={formData.mailingState || ''}
+                        onChange={handleChange}
+                        placeholder="Mailing State"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
+                        key={`mailingState-${contact?.id || 'new'}`}
+                      />
+                    </div>
+                    <div>
+                      <input
+                        type="text"
+                        name="mailingZip"
+                        value={formData.mailingZip || ''}
+                        onChange={handleChange}
+                        placeholder="Mailing ZIP"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
+                        key={`mailingZip-${contact?.id || 'new'}`}
                       />
                     </div>
                   </div>
@@ -477,15 +770,16 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                 {/* Business Information Section */}
                 <div>
                   <h3 className="text-lg font-medium text-gray-900 mb-3">Business Information</h3>
-                  
+
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Customer Type</label>
                       <select
                         name="customerType"
-                        value={formData.customerType}
+                        value={formData.customerType || ''}
                         onChange={handleChange}
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
+                        key={`customerType-${contact?.id || 'new'}`}
                       >
                         <option value="Individual">Individual</option>
                         <option value="Business">Business</option>
@@ -496,9 +790,10 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                       <label className="block text-sm font-medium text-gray-700 mb-1">Account Type</label>
                       <select
                         name="accountType"
-                        value={formData.accountType}
+                        value={formData.accountType || ''}
                         onChange={handleChange}
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
+                        key={`accountType-${contact?.id || 'new'}`}
                       >
                         <option value="Standard">Standard</option>
                         <option value="Premium">Premium</option>
@@ -512,9 +807,10 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                       <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
                       <select
                         name="contactStatus"
-                        value={formData.contactStatus}
+                        value={formData.contactStatus || ''}
                         onChange={handleChange}
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
+                        key={`contactStatus-${contact?.id || 'new'}`}
                       >
                         <option value="Active">Active</option>
                         <option value="Inactive">Inactive</option>
@@ -529,7 +825,7 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                         value={formData.customerSubStatus}
                         onChange={handleChange}
                         placeholder="Customer Sub Status"
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
                       />
                     </div>
                   </div>
@@ -542,7 +838,7 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                         value={formData.customerAgentOfRecord}
                         onChange={handleChange}
                         placeholder="Agent of Record"
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
                       />
                     </div>
                     <div>
@@ -552,7 +848,7 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                         value={formData.customerCsr}
                         onChange={handleChange}
                         placeholder="CSR"
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
                       />
                     </div>
                   </div>
@@ -565,7 +861,7 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                         value={formData.keyedBy}
                         onChange={handleChange}
                         placeholder="Keyed By"
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
                       />
                     </div>
                     <div>
@@ -575,7 +871,7 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                         value={formData.office}
                         onChange={handleChange}
                         placeholder="Office"
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
                       />
                     </div>
                   </div>
@@ -587,8 +883,140 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                       value={formData.source}
                       onChange={handleChange}
                       placeholder="Source"
-                      className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
                     />
+                  </div>
+                </div>
+
+                {/* Driver's License Information Section */}
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-3">Driver's License Information</h3>
+
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <input
+                        type="text"
+                        name="driversLicense"
+                        value={formData.driversLicense || ''}
+                        onChange={handleChange}
+                        placeholder="Driver's License Number"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
+                        key={`driversLicense-${contact?.id || 'new'}`}
+                      />
+                    </div>
+                    <div>
+                      <input
+                        type="text"
+                        name="dlState"
+                        value={formData.dlState || ''}
+                        onChange={handleChange}
+                        placeholder="DL State"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
+                        key={`dlState-${contact?.id || 'new'}`}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Date Licensed</label>
+                    <input
+                      type="date"
+                      name="dateLicensed"
+                      value={formData.dateLicensed || ''}
+                      onChange={handleChange}
+                      className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
+                      key={`dateLicensed-${contact?.id || 'new'}`}
+                    />
+                  </div>
+                </div>
+
+                {/* Communication Preferences Section */}
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-3">Communication Preferences</h3>
+
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Preferred Contact Method</label>
+                      <select
+                        name="preferredContactMethod"
+                        value={formData.preferredContactMethod || ''}
+                        onChange={handleChange}
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
+                        key={`preferredContactMethod-${contact?.id || 'new'}`}
+                      >
+                        <option value="">Select Preferred Method</option>
+                        <option value="email">Email</option>
+                        <option value="phone">Phone</option>
+                        <option value="text">Text</option>
+                        <option value="mail">Mail</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-medium text-gray-700">Do Not Contact Preferences</h4>
+                    <div className="grid grid-cols-2 gap-4">
+                      <label className="flex items-center">
+                        <input
+                          type="checkbox"
+                          name="doNotEmail"
+                          checked={formData.doNotEmail}
+                          onChange={handleChange}
+                          className="rounded border-gray-300 text-green-600 shadow-sm focus:border-green-300 focus:ring focus:ring-green-200 focus:ring-opacity-50"
+                        />
+                        <span className="ml-2 text-sm text-gray-700">Do Not Email</span>
+                      </label>
+                      <label className="flex items-center">
+                        <input
+                          type="checkbox"
+                          name="doNotText"
+                          checked={formData.doNotText}
+                          onChange={handleChange}
+                          className="rounded border-gray-300 text-green-600 shadow-sm focus:border-green-300 focus:ring focus:ring-green-200 focus:ring-opacity-50"
+                        />
+                        <span className="ml-2 text-sm text-gray-700">Do Not Text</span>
+                      </label>
+                      <label className="flex items-center">
+                        <input
+                          type="checkbox"
+                          name="doNotCall"
+                          checked={formData.doNotCall}
+                          onChange={handleChange}
+                          className="rounded border-gray-300 text-green-600 shadow-sm focus:border-green-300 focus:ring focus:ring-green-200 focus:ring-opacity-50"
+                        />
+                        <span className="ml-2 text-sm text-gray-700">Do Not Call</span>
+                      </label>
+                      <label className="flex items-center">
+                        <input
+                          type="checkbox"
+                          name="doNotMail"
+                          checked={formData.doNotMail}
+                          onChange={handleChange}
+                          className="rounded border-gray-300 text-green-600 shadow-sm focus:border-green-300 focus:ring focus:ring-green-200 focus:ring-opacity-50"
+                        />
+                        <span className="ml-2 text-sm text-gray-700">Do Not Mail</span>
+                      </label>
+                      <label className="flex items-center">
+                        <input
+                          type="checkbox"
+                          name="doNotMarket"
+                          checked={formData.doNotMarket}
+                          onChange={handleChange}
+                          className="rounded border-gray-300 text-green-600 shadow-sm focus:border-green-300 focus:ring focus:ring-green-200 focus:ring-opacity-50"
+                        />
+                        <span className="ml-2 text-sm text-gray-700">Do Not Market</span>
+                      </label>
+                      <label className="flex items-center">
+                        <input
+                          type="checkbox"
+                          name="doNotCaptureEmail"
+                          checked={formData.doNotCaptureEmail}
+                          onChange={handleChange}
+                          className="rounded border-gray-300 text-green-600 shadow-sm focus:border-green-300 focus:ring focus:ring-green-200 focus:ring-opacity-50"
+                        />
+                        <span className="ml-2 text-sm text-gray-700">Do Not Capture Email</span>
+                      </label>
+                    </div>
                   </div>
                 </div>
 
@@ -601,7 +1029,7 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                     onChange={handleChange}
                     placeholder="Additional notes about this contact..."
                     rows={3}
-                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
                   />
                 </div>
               </div>
@@ -620,7 +1048,7 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                         value={formData.spouse_first_name}
                         onChange={handleChange}
                         placeholder="Spouse First Name"
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
                       />
                     </div>
                     <div>
@@ -630,7 +1058,7 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                         value={formData.spouse_last_name}
                         onChange={handleChange}
                         placeholder="Spouse Last Name"
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
                       />
                     </div>
                   </div>
@@ -643,7 +1071,7 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                         value={formData.spouse_email}
                         onChange={handleChange}
                         placeholder="Spouse Email"
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
                       />
                     </div>
                     <div>
@@ -653,7 +1081,7 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                         value={formData.spouse_phone}
                         onChange={handleChange}
                         placeholder="Spouse Phone"
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
                       />
                     </div>
                   </div>
@@ -663,9 +1091,9 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                     <input
                       type="date"
                       name="spouse_date_of_birth"
-                      value={formData.spouse_date_of_birth || ''}
+                      value={formData.spouse_date_of_birth}
                       onChange={handleChange}
-                      className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
                     />
                   </div>
                 </div>
@@ -792,7 +1220,7 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                     value={formData.company_name}
                     onChange={handleChange}
                     placeholder="Company Name"
-                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
                   />
                 </div>
 
@@ -802,7 +1230,7 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                     name="relationship_type"
                     value={formData.relationship_type}
                     onChange={handleChange}
-                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
                   >
                     <option value="employee">Employee</option>
                     <option value="client">Client</option>
@@ -816,130 +1244,537 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
 
             {activeTab === 3 && (
               <div className="space-y-4">
-                <h3 className="text-lg font-medium text-gray-900">Policy Documents</h3>
-                <p className="text-sm text-gray-600">Upload policy documents for this contact</p>
-                
-                <div className="space-y-3">
-                  {/* Existing Policy Documents */}
-                  {loadingDocuments ? (
-                    <div className="flex items-center justify-center py-8">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                      <span className="ml-2 text-gray-600">Loading documents...</span>
-                    </div>
-                  ) : policyDocuments.length > 0 ? (
-                    policyDocuments.map((document, index) => (
-                      <div key={document.id || index} className="bg-gray-50 p-3 rounded-lg border flex items-center justify-between">
-                        <div className="flex items-center">
-                          <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
-                            <span className="text-blue-600 text-xs font-medium">
-                              {document.file_name?.split('.').pop()?.toUpperCase() || 'DOC'}
-                            </span>
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium text-gray-900">{document.file_name}</p>
-                            <p className="text-xs text-gray-500">
-                              {new Date(document.created_at).toLocaleDateString()}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <button
-                            type="button"
-                            onClick={() => handleDownloadPolicyDocument(document)}
-                            className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
-                            title="Download"
-                          >
-                            <FiDownload className="w-4 h-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeletePolicyDocument(document.id)}
-                            className="p-1 text-gray-400 hover:text-red-600 transition-colors"
-                            title="Delete"
-                          >
-                            <FiTrash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-gray-500 italic">No policy documents uploaded yet</p>
-                  )}
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Policy Information</h3>
 
-                  {/* New Policy Documents to Upload */}
-                  {newPolicyDocuments.map((doc, index) => (
-                    <div key={doc.id} className="bg-gray-50 p-3 rounded-lg border flex items-center justify-between">
-                      <div className="flex items-center">
-                        <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
-                          <span className="text-blue-600 text-xs font-medium">
-                            {doc.file?.type?.split('/')[1]?.toUpperCase() || 'DOC'}
-                          </span>
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">{doc.file?.name}</p>
-                          <p className="text-xs text-gray-500">
-                            {doc.file?.size ? `${(doc.file.size / 1024).toFixed(1)} KB` : ''}
-                          </p>
-                        </div>
-                      </div>
+                <div className="space-y-4">
+                  {/* Policy Entry */}
+                  <div className="flex items-center space-x-4">
+                    <label className="w-48 text-sm font-medium text-gray-700">Policy Entry:</label>
+                    <div className="relative flex-1">
                       <button
                         type="button"
-                        onClick={() => removeNewPolicyDocument(doc.id)}
-                        className="text-red-600 hover:text-red-800 text-sm"
+                        onClick={() => toggleDropdown('policyEntry')}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 flex items-center justify-between"
                       >
-                        Remove
+                        <span>{policyData.policyEntry}</span>
+                        <FiChevronDown className="w-4 h-4" />
                       </button>
+                      {dropdownsOpen.policyEntry && (
+                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg">
+                          {['New Business', 'Rewrite', 'Re-Issue', 'Renewal', 'Rollover'].map((option) => (
+                            <button
+                              key={option}
+                              type="button"
+                              onClick={() => handleDropdownSelect('policyEntry', option)}
+                              className={`w-full px-3 py-2 text-left hover:bg-green-50 ${policyData.policyEntry === option ? 'bg-green-100' : ''
+                                }`}
+                            >
+                              {option === 'New Business' && <span className="mr-2">✓</span>}
+                              {option}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  ))}
-                  
-                  <label className="flex items-center justify-center w-full h-12 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors">
-                    <div className="flex items-center space-x-2 text-gray-600">
-                      <FiPlus className="w-4 h-4" />
-                      <span className="text-sm">Upload Policy Document</span>
+                  </div>
+
+                  {/* Company */}
+                  <div className="flex items-center space-x-4">
+                    <label className="w-48 text-sm font-medium text-gray-700">Company: <span className="text-red-500">*</span></label>
+                    <div className="relative flex-1">
+                      <button
+                        type="button"
+                        onClick={() => toggleDropdown('company')}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 flex items-center justify-between"
+                      >
+                        <span>{policyData.company || '- Select Company -'}</span>
+                        <FiChevronDown className="w-4 h-4" />
+                      </button>
+                      {dropdownsOpen.company && (
+                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                          <div className="px-3 py-2 text-gray-500 border-b">- Select Company -</div>
+                          {companies.map((company) => (
+                            <button
+                              key={company.id}
+                              type="button"
+                              onClick={() => handleDropdownSelect('company', company.name)}
+                              className={`w-full px-3 py-2 text-left hover:bg-green-50 ${policyData.company === company.name ? 'bg-green-100' : ''
+                                }`}
+                            >
+                              {company.name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <input
-                      type="file"
-                      onChange={handleFileUpload}
-                      className="hidden"
-                      accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png"
-                      multiple
-                    />
-                  </label>
+                  </div>
+
+                  {/* Product */}
+                  <div className="flex items-center space-x-4">
+                    <label className="w-48 text-sm font-medium text-gray-700">Product: <span className="text-red-500">*</span></label>
+                    <div className="relative flex-1">
+                      <button
+                        type="button"
+                        onClick={() => toggleDropdown('product')}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 flex items-center justify-between"
+                      >
+                        <span>{policyData.product || '- Select Product -'}</span>
+                        <FiChevronDown className="w-4 h-4" />
+                      </button>
+                      {dropdownsOpen.product && (
+                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                          <div className="px-3 py-2 text-gray-500 border-b">- Select Product -</div>
+                          {[
+                            'auto 12 month - AUTOP - 12 Month',
+                            'AUTOP - AUTOP - 6 Month - Nationwide General Insurance Company - NAIC:23760N',
+                            'AUTOP - AUTOP - 6 Month - Nationwide Mutual Insurance Company - NAIC:23787N',
+                            'AUTOP - AUTOP - 6 Month - Nationwide Insurance Company of America - NAIC:25453N',
+                            'AUTOP - AUTOP - 6 Month - Nationwide Affinity Insurance Company of America - NAIC:26093N',
+                            'AUTOP - AUTOP - 6 Month - ALLIED - NAIC:10723N',
+                            'BOAT - BOAT - 12 Month - ALLIED - NAIC:37877N',
+                            'Bond - ADD-ON - 12 Month - Nationwide',
+                            'DFIRE - DFIRE - 12 Month - Nationwide Mutual Fire Insurance Company - NAIC:23779N',
+                            'Farm Owners - HOME - 12 Month',
+                            'HOME - HOME - 12 Month - Nationwide Mutual Property and Casualty - NAIC:37877N',
+                            'HOME - HOME - 12 Month - Nationwide Mutual Fire Insurance Company - NAIC:23779N',
+                            'HOME - HOME - 12 Month - Nationwide General Insurance Company - NAIC:23760N',
+                            'INMRP - INMRP - 12 Month - Nationwide Mutual Fire Insurance Company - NAIC:23779N',
+                            'Life Ins - ADD-ON - 12 Month - Nationwide',
+                            'Motorcycle - ADD-ON - 12 Month',
+                            'PUMBR - PUMBR - 12 Month - Nationwide Mutual Insurance Company - NAIC:23787N'
+                          ].map((product) => (
+                            <button
+                              key={product}
+                              type="button"
+                              onClick={() => handleDropdownSelect('product', product)}
+                              className={`w-full px-3 py-2 text-left hover:bg-green-50 ${policyData.product === product ? 'bg-green-100' : ''
+                                }`}
+                            >
+                              {product}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Payment Plan */}
+                  <div className="flex items-center space-x-4">
+                    <label className="w-48 text-sm font-medium text-gray-700">Payment Plan:</label>
+                    <div className="relative flex-1">
+                      <button
+                        type="button"
+                        onClick={() => toggleDropdown('paymentPlan')}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 flex items-center justify-between"
+                      >
+                        <span>{policyData.paymentPlan || '- Select Payment Plan -'}</span>
+                        <FiChevronDown className="w-4 h-4" />
+                      </button>
+                      {dropdownsOpen.paymentPlan && (
+                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg">
+                          <div className="px-3 py-2 text-gray-500 border-b">- Select Payment Plan -</div>
+                          {['Final', 'Monthly', 'Quarterly'].map((option) => (
+                            <button
+                              key={option}
+                              type="button"
+                              onClick={() => handleDropdownSelect('paymentPlan', option)}
+                              className={`w-full px-3 py-2 text-left hover:bg-green-50 ${policyData.paymentPlan === option ? 'bg-green-100' : ''
+                                }`}
+                            >
+                              {option}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Policy Number */}
+                  <div className="flex items-center space-x-4">
+                    <label className="w-48 text-sm font-medium text-gray-700">Policy Number: <span className="text-red-500">*</span></label>
+                    <div className="flex-1">
+                      <input
+                        type="text"
+                        value={policyData.policyNumber}
+                        onChange={(e) => handlePolicyChange('policyNumber', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {/* Premium */}
+                  <div className="flex items-center space-x-4">
+                    <label className="w-48 text-sm font-medium text-gray-700">Premium:</label>
+                    <div className="flex-1">
+                      <input
+                        type="text"
+                        value={policyData.purePremium}
+                        onChange={(e) => handlePolicyChange('purePremium', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Payment Due Day */}
+                  <div className="flex items-center space-x-4">
+                    <label className="w-48 text-sm font-medium text-gray-700">Payment Due Day:</label>
+                    <div className="flex items-center space-x-2 flex-1">
+                      <input
+                        type="number"
+                        min="1"
+                        max="31"
+                        value={policyData.paymentDueDay}
+                        onChange={(e) => handlePolicyChange('paymentDueDay', e.target.value)}
+                        className="w-20 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-500">(1-31)</span>
+                    </div>
+                  </div>
+
+                  {/* Eff Date */}
+                  <div className="flex items-center space-x-4">
+                    <label className="w-48 text-sm font-medium text-gray-700">Eff Date:</label>
+                    <div className="flex-1">
+                      <input
+                        type="text"
+                        value={policyData.effDate}
+                        readOnly
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Exp Date */}
+                  <div className="flex items-center space-x-4">
+                    <label className="w-48 text-sm font-medium text-gray-700">Exp Date:</label>
+                    <div className="flex-1">
+                      <input
+                        type="date"
+                        value={policyData.expDate}
+                        onChange={(e) => handlePolicyChange('expDate', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Source */}
+                  <div className="flex items-center space-x-4">
+                    <label className="w-48 text-sm font-medium text-gray-700">Source:</label>
+                    <div className="relative flex-1">
+                      <button
+                        type="button"
+                        onClick={() => toggleDropdown('source')}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 flex items-center justify-between"
+                      >
+                        <span>{policyData.source || '- Select Source -'}</span>
+                        <FiChevronDown className="w-4 h-4" />
+                      </button>
+                      {dropdownsOpen.source && (
+                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                          <div className="px-3 py-2 text-gray-500 border-b">✓ - Select Source -</div>
+                          {['Acord XML Import', 'Arthur Szfranski', 'Bill Bartiet', 'BOR', 'CT Electricians',
+                            'Current Policy Holder', 'Download', 'GFA', 'Google ad words', 'Hub Spot policyholder',
+                            'Mike Gzyms', 'Phone', 'Referral', 'Sales Genie', 'SGenie Restaurants',
+                            'Siding Contractors NY', 'Transfer', 'Walk-In', 'Web Lead'].map((option) => (
+                              <button
+                                key={option}
+                                type="button"
+                                onClick={() => handleDropdownSelect('source', option)}
+                                className={`w-full px-3 py-2 text-left hover:bg-green-50 ${policyData.source === option ? 'bg-green-100' : ''
+                                  }`}
+                              >
+                                {option}
+                              </button>
+                            ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Sub Source */}
+                  <div className="flex items-center space-x-4">
+                    <label className="w-48 text-sm font-medium text-gray-700">Sub Source:</label>
+                    <div className="relative flex-1">
+                      <button
+                        type="button"
+                        onClick={() => toggleDropdown('subSource')}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 flex items-center justify-between"
+                      >
+                        <span>{policyData.subSource || '- Select Sub Source -'}</span>
+                        <FiChevronDown className="w-4 h-4" />
+                      </button>
+                      {dropdownsOpen.subSource && (
+                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg">
+                          <div className="px-3 py-2 text-gray-500 border-b">- Select Sub Source -</div>
+                          {['Arthur Szafranski', 'Bill Flanagan', 'Ken Camaro'].map((option) => (
+                            <button
+                              key={option}
+                              type="button"
+                              onClick={() => handleDropdownSelect('subSource', option)}
+                              className={`w-full px-3 py-2 text-left hover:bg-green-50 ${policyData.subSource === option ? 'bg-green-100' : ''
+                                }`}
+                            >
+                              {option}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Policy Agent of Record */}
+                  <div className="flex items-center space-x-4">
+                    <label className="w-48 text-sm font-medium text-gray-700">Policy Agent of Record: <span className="text-red-500">*</span></label>
+                    <div className="flex items-center space-x-2 flex-1">
+                      <div className="relative flex-1">
+                        <button
+                          type="button"
+                          onClick={() => toggleDropdown('policyAgentOfRecord')}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 flex items-center justify-between"
+                        >
+                          <span>{policyData.policyAgentOfRecord}</span>
+                          <FiChevronDown className="w-4 h-4" />
+                        </button>
+                        {dropdownsOpen.policyAgentOfRecord && (
+                          <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg">
+                            <div className="px-3 py-2 text-gray-500 border-b">- Select Agent of Record -</div>
+                            {['Alisha Hanif', 'Bill Bartiet', 'James Eagan', 'John J Cusmano Jr.', 'Kaynat Malik'].map((option) => (
+                              <button
+                                key={option}
+                                type="button"
+                                onClick={() => handleDropdownSelect('policyAgentOfRecord', option)}
+                                className={`w-full px-3 py-2 text-left hover:bg-green-50 flex items-center ${policyData.policyAgentOfRecord === option ? 'bg-green-100' : ''
+                                  }`}
+                              >
+                                {policyData.policyAgentOfRecord === option && <span className="mr-2">✓</span>}
+                                {option}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <span className="text-sm font-medium bg-gray-100 px-2 py-1 rounded">{policyData.commissionSplit}</span>
+                        <button
+                          type="button"
+                          className="px-3 py-1 bg-green-500 text-white text-sm rounded hover:bg-green-600"
+                        >
+                          Split Commission
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Policy CSR */}
+                  <div className="flex items-center space-x-4">
+                    <label className="w-48 text-sm font-medium text-gray-700">Policy CSR:</label>
+                    <div className="relative flex-1">
+                      <button
+                        type="button"
+                        onClick={() => toggleDropdown('policyCSR')}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 flex items-center justify-between"
+                      >
+                        <span>{policyData.policyCSR}</span>
+                        <FiChevronDown className="w-4 h-4" />
+                      </button>
+                      {dropdownsOpen.policyCSR && (
+                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg">
+                          <div className="px-3 py-2 text-gray-500 border-b">- Select CSR -</div>
+                          {['Alisha Hanif', 'Bill Bartiet', 'James Eagan', 'John J Cusmano Jr.', 'Kaynat Malik'].map((option) => (
+                            <button
+                              key={option}
+                              type="button"
+                              onClick={() => handleDropdownSelect('policyCSR', option)}
+                              className={`w-full px-3 py-2 text-left hover:bg-green-50 ${policyData.policyCSR === option ? 'bg-green-100' : ''
+                                }`}
+                            >
+                              {option}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Prior Policy Number */}
+                  <div className="flex items-center space-x-4">
+                    <label className="w-48 text-sm font-medium text-gray-700">Prior Policy Number:</label>
+                    <div className="flex-1">
+                      <input
+                        type="text"
+                        value={policyData.priorPolicyNumber}
+                        onChange={(e) => handlePolicyChange('priorPolicyNumber', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Memo */}
+                  <div className="flex items-start space-x-4">
+                    <label className="w-48 text-sm font-medium text-gray-700 pt-2">Memo:</label>
+                    <div className="flex-1">
+                      <textarea
+                        value={policyData.memo}
+                        onChange={(e) => handlePolicyChange('memo', e.target.value)}
+                        rows={3}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                        placeholder="Enter memo..."
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
 
-            <div className="flex justify-between pt-4">
-              {activeTab > 0 && (
+            {activeTab === 4 && (
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Attachments</h3>
+                <p className="text-sm text-gray-600 mb-4">Upload and manage files for this contact</p>
+
+                {/* Upload Area */}
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-green-400 hover:bg-green-50 transition-colors">
+                  <FiUpload className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+                  <div className="text-sm text-gray-600 mb-2">
+                    <label htmlFor="attachment-upload" className="cursor-pointer">
+                      <span className="font-medium text-green-600 hover:text-green-500">Click to upload</span> or drag and drop
+                    </label>
+                    <input
+                      id="attachment-upload"
+                      type="file"
+                      onChange={handleAttachmentUpload}
+                      className="hidden"
+                      accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.xlsx,.xls"
+                      multiple
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500">PDF, DOC, DOCX, TXT, JPG, PNG, XLSX up to 10MB each</p>
+                </div>
+
+                {/* Attachments List */}
+                {attachments.length > 0 && (
+                  <div className="space-y-3">
+                    <h4 className="text-md font-medium text-gray-900">Uploaded Files ({attachments.length})</h4>
+                    <div className="space-y-2">
+                      {attachments.map((attachment) => (
+                        <div key={attachment.id} className="bg-gray-50 p-3 rounded-lg border flex items-center justify-between">
+                          <div className="flex items-center">
+                            <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center mr-3">
+                              <span className="text-blue-600 text-xs font-medium">
+                                {attachment.type}
+                              </span>
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">{attachment.name}</p>
+                              <p className="text-xs text-gray-500">
+                                {attachment.size} • {attachment.uploadedDate}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <button
+                              type="button"
+                              className="text-green-600 hover:text-green-800"
+                              title="View"
+                            >
+                              <FiEye className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              className="text-emerald-600 hover:text-emerald-800"
+                              title="Download"
+                            >
+                              <FiDownload className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              className="text-gray-600 hover:text-gray-800"
+                              title="Edit"
+                            >
+                              <FiEdit3 className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleAttachmentDelete(attachment.id)}
+                              className="text-red-600 hover:text-red-800"
+                              title="Delete"
+                            >
+                              <FiTrash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Empty State */}
+                {attachments.length === 0 && (
+                  <div className="text-center py-8">
+                    <FiPaperclip className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+                    <p className="text-gray-500">No attachments uploaded yet</p>
+                    <p className="text-sm text-gray-400">Upload files to get started</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex justify-between items-center pt-8 border-t border-gray-200">
+              <div className="flex items-center space-x-4">
+                {activeTab > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab(activeTab - 1)}
+                    className="flex items-center px-6 py-3 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-all duration-200 font-medium"
+                  >
+                    <FiChevronDown className="w-4 h-4 mr-2 rotate-90" />
+                    Previous
+                  </button>
+                )}
+                <div className="text-sm text-gray-500">
+                  Step {activeTab + 1} of 5
+                </div>
+              </div>
+              <div className="flex items-center space-x-3">
                 <button
                   type="button"
-                  onClick={() => setActiveTab(activeTab - 1)}
-                  className="px-4 py-2 text-gray-600 hover:text-gray-800"
+                  onClick={onClose}
+                  className="px-6 py-3 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-all duration-200 font-medium"
                 >
-                  Previous
+                  Cancel
                 </button>
-              )}
-              <div className="ml-auto">
-                {activeTab < 3 ? (
+                {activeTab < 4 ? (
                   <button
                     type="button"
                     onClick={() => setActiveTab(activeTab + 1)}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                    className="flex items-center px-8 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg hover:from-green-700 hover:to-emerald-700 transition-all duration-200 transform hover:scale-105 font-medium shadow-lg"
                   >
                     Next
+                    <FiChevronDown className="w-4 h-4 ml-2 -rotate-90" />
                   </button>
                 ) : (
                   <button
                     type="submit"
                     disabled={loading}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                    className="flex items-center px-8 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg hover:from-green-700 hover:to-emerald-700 transition-all duration-200 transform hover:scale-105 font-medium shadow-lg disabled:opacity-50 disabled:transform-none"
                   >
-                    {loading ? 'Updating...' : 'Update Contact'}
+                    {loading ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
+                        Updating Contact...
+                      </>
+                    ) : (
+                      <>
+                        <FiEdit2 className="w-4 h-4 mr-2" />
+                        Update Contact
+                      </>
+                    )}
                   </button>
                 )}
               </div>
             </div>
           </form>
+          </div>
         </div>
       </div>
     </Dialog>

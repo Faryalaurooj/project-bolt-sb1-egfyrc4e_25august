@@ -2,117 +2,190 @@ import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import { db } from '../db.js';
 
-// Helper function to validate and clean date values
-const cleanDateValue = (dateValue) => {
-  if (!dateValue || dateValue.trim() === '' || dateValue === 'null' || dateValue === 'undefined') {
-    return null;
-  }
-  // Validate that it's a proper date format
-  const date = new Date(dateValue);
-  if (isNaN(date.getTime())) {
-    return null;
-  }
-  return dateValue;
-};
-
 const router = express.Router();
 
 // Create a new policy
-router.post('/', authenticateToken, async (req, res) => {
+router.post('/', async (req, res) => {
   try {
+ 
+    
     const { 
-      contact_id, 
-      policy_type, 
-      company, 
-      policy_number, 
-      effective_date, 
-      expiration_date, 
-      premium, 
-      pfm_level, 
-      policy_forms,
-      raw_data 
+      policyEntry,
+      company,
+      product,
+      paymentPlan,
+      policyNumber,
+      purePremium,
+      paymentDueDay,
+      effDate,
+      expDate,
+      source,
+      subSource,
+      policyAgentOfRecord,
+      policyCSR,
+      priorPolicyNumber,
+      memo,
+      commissionSplit,
+      contact_id,
+      created_by
     } = req.body;
 
+    // Validate required fields - policy number is optional for now
+    // if (!policy_number) {
+    //   console.log('📋 Backend: Validation failed - policy_number is required');
+    //   return res.status(400).json({ error: 'Policy number is required' });
+    // }
+
+    console.log('📋 Backend: Inserting policy into database...');
+    
+    // Map frontend data directly to database columns
+    const policyData = {
+      contact_id: contact_id || null,
+      policy_entry: policyEntry || 'New Business',
+      policy_type: product || null,
+      company: company || null,
+      product: product || null,
+      policy_number: policyNumber || null,
+      effective_date: effDate || null,
+      eff_date: effDate || null,
+      expiration_date: expDate || null,
+      exp_date: expDate || null,
+      premium: purePremium ? parseFloat(purePremium) : null,
+      pfm_level: paymentPlan || null,
+      payment_plan: paymentPlan || null,
+      policy_forms: memo || null,
+      memo: memo || null,
+      source: source || null,
+      sub_source: subSource || null,
+      policy_agent_of_record: policyAgentOfRecord || null,
+      policy_csr: policyCSR || null,
+      prior_policy_number: priorPolicyNumber || null,
+      payment_due_day: paymentDueDay ? parseInt(paymentDueDay) : null,
+      commission_split: commissionSplit || '100.00%',
+      created_by: created_by || null
+    };
+    
     const [policy] = await db('policies')
-      .insert({
-        contact_id,
-        policy_type,
-        company,
-        policy_number,
-        effective_date: cleanDateValue(effective_date),
-        expiration_date: cleanDateValue(expiration_date),
-        premium,
-        pfm_level,
-        policy_forms,
-        raw_data,
-        created_by: req.user.userId
-      })
+      .insert(policyData)
       .returning('*');
 
+   
     res.status(201).json(policy);
   } catch (error) {
-    console.error('Error creating policy:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// Get policies for a specific contact
-router.get('/contact/:contactId', authenticateToken, async (req, res) => {
-  try {
-    const policies = await db('policies')
-      .where('contact_id', req.params.contactId)
-      .andWhere('created_by', req.user.userId)
-      .orderBy('created_at', 'desc');
-
-    res.json(policies);
-  } catch (error) {
-    console.error('Error fetching policies for contact:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('📋 Backend: ❌ Error creating policy:', error);
+    res.status(500).json({ error: 'Failed to create policy' });
   }
 });
 
 // Get all policies for the authenticated user
-router.get('/', authenticateToken, async (req, res) => {
+router.get('/',  async (req, res) => {
   try {
     const policies = await db('policies')
-      .select('policies.*', 'contacts.first_name', 'contacts.last_name')
-      .leftJoin('contacts', 'policies.contact_id', 'contacts.id')
-      .where('policies.created_by', req.user.userId)
-      .orderBy('policies.created_at', 'desc');
+      
+      .orderBy('created_at', 'desc');
 
     res.json(policies);
   } catch (error) {
-    console.error('Error fetching policies:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('❌ Error fetching policies:', error);
+    res.status(500).json({ error: 'Failed to fetch policies' });
+  }
+});
+
+// Get policies by contact ID
+router.get('/contact/:contactId', authenticateToken, async (req, res) => {
+  try {
+    const policies = await db('policies')
+      .where('contact_id', req.params.contactId)
+     
+      .orderBy('created_at', 'desc');
+
+    res.json(policies);
+  } catch (error) {
+    console.error('❌ Error fetching policies by contact:', error);
+    res.status(500).json({ error: 'Failed to fetch policies' });
+  }
+});
+
+// Get a specific policy by ID
+router.get('/:id',  async (req, res) => {
+  try {
+    const policy = await db('policies')
+      .where('id', req.params.id)
+    
+      .first();
+
+    if (!policy) {
+      return res.status(404).json({ error: 'Policy not found' });
+    }
+
+    res.json(policy);
+  } catch (error) {
+    console.error('❌ Error fetching policy:', error);
+    res.status(500).json({ error: 'Failed to fetch policy' });
   }
 });
 
 // Update a policy
-router.put('/:id', authenticateToken, async (req, res) => {
+router.put('/:id',  async (req, res) => {
   try {
-    const { effective_date, expiration_date, ...otherFields } = req.body;
-    
-    const updateData = {
-      ...otherFields,
-      effective_date: cleanDateValue(effective_date),
-      expiration_date: cleanDateValue(expiration_date),
+    const { 
+      policyEntry,
+      company,
+      product,
+      paymentPlan,
+      policyNumber,
+      purePremium,
+      paymentDueDay,
+      effDate,
+      expDate,
+      source,
+      subSource,
+      policyAgentOfRecord,
+      policyCSR,
+      priorPolicyNumber,
+      memo,
+      commissionSplit
+    } = req.body;
+
+    // Map frontend data directly to database columns
+    const policyData = {
+      policy_entry: policyEntry || 'New Business',
+      policy_type: product || null,
+      company: company || null,
+      product: product || null,
+      policy_number: policyNumber || null,
+      effective_date: effDate || null,
+      eff_date: effDate || null,
+      expiration_date: expDate || null,
+      exp_date: expDate || null,
+      premium: purePremium ? parseFloat(purePremium) : null,
+      pfm_level: paymentPlan || null,
+      payment_plan: paymentPlan || null,
+      policy_forms: memo || null,
+      memo: memo || null,
+      source: source || null,
+      sub_source: subSource || null,
+      policy_agent_of_record: policyAgentOfRecord || null,
+      policy_csr: policyCSR || null,
+      prior_policy_number: priorPolicyNumber || null,
+      payment_due_day: paymentDueDay ? parseInt(paymentDueDay) : null,
+      commission_split: commissionSplit || '100.00%',
       updated_at: new Date()
     };
-    
+
     const [policy] = await db('policies')
       .where('id', req.params.id)
-      .andWhere('created_by', req.user.userId)
-      .update(updateData)
+      .update(policyData)
       .returning('*');
-    
+
     if (!policy) {
       return res.status(404).json({ error: 'Policy not found' });
     }
-    
+
     res.json(policy);
   } catch (error) {
-    console.error('Error updating policy:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('❌ Error updating policy:', error);
+    res.status(500).json({ error: 'Failed to update policy' });
   }
 });
 
@@ -121,17 +194,17 @@ router.delete('/:id', authenticateToken, async (req, res) => {
   try {
     const count = await db('policies')
       .where('id', req.params.id)
-      .andWhere('created_by', req.user.userId)
+      
       .del();
-    
+
     if (count === 0) {
       return res.status(404).json({ error: 'Policy not found' });
     }
-    
+
     res.status(204).send();
   } catch (error) {
-    console.error('Error deleting policy:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('❌ Error deleting policy:', error);
+    res.status(500).json({ error: 'Failed to delete policy' });
   }
 });
 

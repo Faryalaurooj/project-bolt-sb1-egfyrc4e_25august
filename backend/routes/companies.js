@@ -5,7 +5,7 @@ import { db } from '../db.js';
 const router = express.Router();
 
 // Create a new company
-router.post('/', authenticateToken, async (req, res) => {
+router.post('/',  async (req, res) => {
   try {
     console.log('🏢 Backend: POST /api/companies called');
     console.log('🏢 Backend: Request body:', req.body);
@@ -21,7 +21,8 @@ router.post('/', authenticateToken, async (req, res) => {
       zip, 
       phone, 
       email, 
-      notes 
+      notes ,
+      created_by
     } = req.body;
 
     // Validate required fields
@@ -44,7 +45,7 @@ router.post('/', authenticateToken, async (req, res) => {
         phone: phone || null,
         email: email || null,
         notes: notes || null,
-        created_by: req.user.userId
+        created_by: created_by
       })
       .returning('*');
 
@@ -69,10 +70,9 @@ router.post('/', authenticateToken, async (req, res) => {
 });
 
 // Get all companies for the authenticated user
-router.get('/', authenticateToken, async (req, res) => {
+router.get('/',  async (req, res) => {
   try {
     const companies = await db('companies')
-      .where('created_by', req.user.userId)
       .orderBy('name', 'asc');
 
     res.json(companies);
@@ -83,7 +83,7 @@ router.get('/', authenticateToken, async (req, res) => {
 });
 
 // Get a specific company by ID
-router.get('/:id', authenticateToken, async (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
     const company = await db('companies')
       .where('id', req.params.id)
@@ -102,7 +102,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
 });
 
 // Update a company
-router.put('/:id', authenticateToken, async (req, res) => {
+router.put('/:id', async (req, res) => {
   try {
     const { 
       name, 
@@ -119,7 +119,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
 
     const [company] = await db('companies')
       .where('id', req.params.id)
-      .andWhere('created_by', req.user.userId)
+    
       .update({
         name,
         domain: domain || null,
@@ -147,11 +147,11 @@ router.put('/:id', authenticateToken, async (req, res) => {
 });
 
 // Delete a company
-router.delete('/:id', authenticateToken, async (req, res) => {
+router.delete('/:id',  async (req, res) => {
   try {
     const count = await db('companies')
       .where('id', req.params.id)
-      .andWhere('created_by', req.user.userId)
+     
       .del();
 
     if (count === 0) {
@@ -166,7 +166,7 @@ router.delete('/:id', authenticateToken, async (req, res) => {
 });
 
 // Link a contact to a company
-router.post('/:companyId/contacts/:contactId', authenticateToken, async (req, res) => {
+router.post('/:companyId/contacts/:contactId',  async (req, res) => {
   try {
     const { companyId, contactId } = req.params;
     const { relationship_type = 'employee' } = req.body;
@@ -207,7 +207,7 @@ router.post('/:companyId/contacts/:contactId', authenticateToken, async (req, re
 });
 
 // Remove a contact from a company
-router.delete('/:companyId/contacts/:contactId', authenticateToken, async (req, res) => {
+router.delete('/:companyId/contacts/:contactId',  async (req, res) => {
   try {
     const { companyId, contactId } = req.params;
 

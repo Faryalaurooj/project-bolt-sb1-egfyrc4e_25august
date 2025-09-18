@@ -350,7 +350,7 @@ function ContactDetail() {
                     <div className="mt-6">
                       <h3 className="text-lg font-semibold text-gray-900 mb-2">Tags</h3>
                       <div className="flex flex-wrap gap-2">
-                        {contact.tags.map((tag, index) => (
+                        {contact?.tags?.map((tag, index) => (
                           <span
                             key={index}
                             className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm"

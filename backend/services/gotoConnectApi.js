@@ -7,9 +7,12 @@ class GoToConnectAPI {
     this.clientId = 'a4058452-ca64-4aba-a0d4-a77b314da172';
     this.clientSecret = '23DTUdbooAMfLEbnpMO8lerm';
     this.tokenURL = 'https://authentication.logmeininc.com/oauth/token';
-    this.accessToken = 'eyJraWQiOiI2MjAiLCJhbGciOiJSUzUxMiJ9.eyJzYyI6InN1cHBvcnQ6IGlkZW50aXR5OiBpZGVudGl0eTpzY2ltLm9yZyBjb2xsYWI6IGlkZW50aXR5OnNjaW0ubWUiLCJzdWIiOiIxNzQ2NDE0MTA4OTI1NzgzNzgzIiwiYXVkIjoiZTY3Yjc4ZTctNmE4My00MmI0LWE2OGUtOTNhMWFmOWJjZmZhIiwib2duIjoicHdkIiwidHlwIjoiYSIsImV4cCI6MTc1NzQyNzU1NCwiaWF0IjoxNzU3NDIzOTU0LCJqdGkiOiJkZmM1ODU1Ny05MWIwLTQxNWUtYmI3YS0xMzAwOTcyZWUyZTMiLCJsb2EiOjN9.kg7S3sjajij7Y4cHeAnwE_3EocCyF3Qp9vAzIKUXBL_pHSDWwXxdpDGGdg94LxKfc4jPgI6pDdvtSrbf03CkLF3rdoUgA9zIHGgu6AoaxoftUygfyWO9vvxa1Y7d9vRYeWnqe7YRXX8NsrX0X2PssXdPsUMcNJzER4TNQR5kFeUqvmXRqQHMyzThdek9sxpogfftTCdtGjrgbiv19r2TSLW6FeP7kXJpBLMMYAZyHbwx4o7NPd__fLlvts9qKzq3fDP-UBtxBGOqPCu3yUiDF3N6I-BK1Y_7jcCaY8lpw5hlK0i-8MBoISqZreDWoAItoyoYl_p-dYZ5k-7Be4dAOw';
+    // Updated access token with voice admin permissions
+    this.accessToken = 'eyJraWQiOiI2MjAiLCJhbGciOiJSUzUxMiJ9.eyJzYyI6InZvaWNlLWFkbWluLnYxLnJlYWQgY2FsbHMudjIuaW5pdGlhdGUgdm9pY2UtYWRtaW4udjEud3JpdGUgaWRlbnRpdHk6IHdlYnJ0Yy52MS5yZWFkIHdlYnJ0Yy52MS53cml0ZSB1c2Vycy52MS5saW5lcy5yZWFkIiwic3ViIjoiNjAxMzI0MjY3OTE0MzIwMTI5MiIsImF1ZCI6ImZkZTZhYzYzLWJmZmItNGJiOC1iYzVkLTRmMmVlZGJhM2JkMSIsIm9nbiI6InB3ZCIsImxzIjoiZmQyMGUxYWMtNTEyYS00YjBlLTg2MmUtNzg4NGQ0NDY5Yjc0IiwidHlwIjoiYSIsImV4cCI6MTc1ODEyMDIxNiwiaWF0IjoxNzU4MTE2NjE2LCJqdGkiOiI3YzFjYTNhNC1hZDIxLTQxMTUtYTA2Ni1kN2VlNmM3ZTVhZGIifQ.TXsoc54F9_SVRGgvCOA2yjqprVU889u8D8n685VLTvI_HtcaqzCZ1l0YLIxNBW5YBAxxJzrOfQQMuVhBfJyctbKD42pRlS1fh5AMfYWXQ1_s33DF997Fk9dtBHlxuyddFL59h6zNyHgu7rwspF4j76yoEiuTTEpJaIDK-jqUpLG379N8xfGc3gG6bwVd47g7wlUyXFDo3Na7S7D02_zdgQMiXr2a1fr_f39AIwNP_rR9tcEsylnT8sxGmwuyY7-KXsQgnxM_iAdZqUD2NUhAFAfcVx4fxaSfMViUsxHihmDUZAwq6ypOdKS-XpYwBAZmrAjHOiJVZHA4VNCA_E-FJg';
     this.userId = null;
     this.tokenExpiry = null;
+    // Default line ID for direct calls
+    this.defaultLineId = '836ce9e8-7a2b-4aaa-b61a-932d22aeb9ca';
   }
 
   // Generate authorization URL for user to get authorization code
@@ -156,6 +159,72 @@ class GoToConnectAPI {
       return {
         success: false,
         error: error.response?.data?.error_description || error.message
+      };
+    }
+  }
+
+  // Direct call using GoTo Connect v2 API with the specified format
+  async makeDirectCall(phoneNumber, contactName, fromLineId = null) {
+    try {
+      const token = await this.getAccessToken();
+      
+      // Use provided line ID or default
+      const lineId = fromLineId || this.defaultLineId;
+      
+      // Format phone number for dialing
+      let dialString = phoneNumber;
+      
+      // If number doesn't start with +, add country code
+      if (!phoneNumber.startsWith('+')) {
+        // Check if it's a Pakistani number (starts with 03)
+        if (phoneNumber.startsWith('03')) {
+          // Pakistani number: 03175970284 -> +923175970284
+          dialString = `+92${phoneNumber.substring(1)}`;
+        } else if (phoneNumber.startsWith('1') && phoneNumber.length === 10) {
+          // US number: 1234567890 -> +11234567890
+          dialString = `+1${phoneNumber}`;
+        } else {
+          // Default: assume it needs +1 (US)
+          dialString = `+1${phoneNumber.replace(/\D/g, '')}`;
+        }
+      }
+
+      console.log(`📞 Making direct GoTo Connect call to ${contactName} (${dialString})`);
+      console.log(`📱 Using line ID: ${lineId}`);
+
+      // GoTo Connect v2 API call format as specified
+      const callData = {
+        dialString: dialString,
+        from: {
+          lineId: lineId
+        },
+        autoAnswer: true
+      };
+
+      console.log('📞 Direct call data:', callData);
+
+       const response = await axios.post(`${this.baseURL}/calls/v2/initiate`, callData, {
+         headers: {
+           'Authorization': `Bearer ${token}`,
+           'Content-Type': 'application/json',
+           'Accept': 'application/json'
+         }
+       });
+
+      console.log('✅ Direct GoTo Connect call initiated successfully:', response.data);
+
+      return {
+        success: true,
+        data: response.data,
+        callId: response.data.callId || response.data.id,
+        message: `Direct call initiated to ${contactName} (${dialString})`
+      };
+    } catch (error) {
+      console.error('❌ Failed to initiate direct GoTo Connect call:', error.response?.data || error.message);
+      return {
+        success: false,
+        error: error.response?.data?.error_description || error.message,
+        details: error.response?.data
       };
     }
   }

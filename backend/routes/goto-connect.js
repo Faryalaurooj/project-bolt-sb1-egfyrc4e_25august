@@ -176,6 +176,53 @@ router.get('/phone-numbers', authenticateToken, async (req, res) => {
   }
 });
 
+// Direct call using GoTo Connect v2 API
+router.post('/direct-call', async (req, res) => {
+  try {
+    const { phoneNumber, contactName, fromLineId } = req.body;
+    
+    // Validate required fields
+    if (!phoneNumber) {
+      return res.status(400).json({
+        success: false,
+        error: 'Phone number is required'
+      });
+    }
+    
+    if (!contactName) {
+      return res.status(400).json({
+        success: false,
+        error: 'Contact name is required'
+      });
+    }
+    
+    console.log(`📞 Making direct call to ${contactName} (${phoneNumber}) using GoTo Connect v2 API`);
+    
+    const result = await gotoConnectAPI.makeDirectCall(phoneNumber, contactName, fromLineId);
+    
+    if (result.success) {
+      res.json({
+        success: true,
+        message: result.message,
+        data: result.data,
+        callId: result.callId
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: result.error,
+        details: result.details
+      });
+    }
+  } catch (error) {
+    console.error('❌ Direct call error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // Initiate a call
 router.post('/call', async (req, res) => {
   try {

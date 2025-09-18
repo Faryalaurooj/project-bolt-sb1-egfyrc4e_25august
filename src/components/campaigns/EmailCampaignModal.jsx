@@ -3,7 +3,7 @@ import { Dialog } from '@headlessui/react';
 import { FiX, FiSend, FiSave, FiEye, FiSettings, FiChevronDown, FiChevronUp, FiPaperclip, FiTrash2 } from 'react-icons/fi';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
-import { getEmailTemplates, getEmailSignatures, getUsers } from '../../services/api';
+import { getEmailTemplates, getEmailSignatures, getUsers, createEmail, saveEmailDraft, getEmailDrafts, deleteEmailDraft } from '../../services/api';
 import TemplateSelectModal from './TemplateSelectModal';
 import { useToast } from '../../hooks/useToast';
 import { useAuth } from '../../context/AuthContext';
@@ -37,6 +37,11 @@ function EmailCampaignModal({ isOpen, onClose }) {
   const [templates, setTemplates] = useState([]);
   const [signatures, setSignatures] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [draftId, setDraftId] = useState(null);
+  const [lastSaved, setLastSaved] = useState(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   // Modal states
   const [isTemplateSelectModalOpen, setIsTemplateSelectModalOpen] = useState(false);
@@ -79,6 +84,26 @@ function EmailCampaignModal({ isOpen, onClose }) {
       fetchData();
     }
   }, [isOpen]);
+
+  // Auto-save draft functionality
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const autoSaveTimeout = setTimeout(() => {
+      if (hasUnsavedChanges && (to.trim() || subject.trim() || content.trim())) {
+        handleSaveDraft();
+      }
+    }, 3000); // Auto-save every 3 seconds
+
+    return () => clearTimeout(autoSaveTimeout);
+  }, [to, subject, content, hasUnsavedChanges, isOpen]);
+
+  // Track changes for auto-save
+  useEffect(() => {
+    if (isOpen) {
+      setHasUnsavedChanges(true);
+    }
+  }, [to, subject, content, cc, bcc, priority, selectedSignatureId]);
 
   const fetchData = async () => {
     try {
@@ -128,6 +153,7 @@ function EmailCampaignModal({ isOpen, onClose }) {
       return;
     }
 
+    setSending(true);
     try {
       const emailData = {
         to: to.split(',').map((e) => e.trim()),
@@ -139,8 +165,42 @@ function EmailCampaignModal({ isOpen, onClose }) {
         attachments: attachments
       };
 
+      // Send email via Outlook
       await sendOutlookEmail(sendFrom, emailData);
+      
+      // Save email to database
+      try {
+        const emailRecord = {
+          subject: subject,
+          body: content,
+          status: 'sent',
+          to_emails: to,
+          cc_emails: cc || '',
+          bcc_emails: bcc || '',
+          from_email: sendFrom,
+          priority: priority,
+          attachments_count: attachments.length
+        };
+        
+        await createEmail(emailRecord);
+        console.log('Email saved to database successfully');
+      } catch (dbError) {
+        console.error('Error saving email to database:', dbError);
+        // Don't fail the entire operation if database save fails
+        showWarning('⚠️ Email sent but failed to save to database');
+      }
+      
       showSuccess('📧 Email sent successfully!');
+      
+      // Delete draft if it exists
+      if (draftId) {
+        try {
+          await deleteEmailDraft(draftId);
+          console.log('Draft deleted after successful send');
+        } catch (err) {
+          console.error('Error deleting draft:', err);
+        }
+      }
       
       // Clear all states after successful send
       clearAllStates();
@@ -149,6 +209,8 @@ function EmailCampaignModal({ isOpen, onClose }) {
     } catch (err) {
       console.error('Error sending email:', err);
       showError('❌ Failed to send email');
+    } finally {
+      setSending(false);
     }
   };
 
@@ -165,6 +227,9 @@ function EmailCampaignModal({ isOpen, onClose }) {
     setShowBcc(false);
     setShowAdvanced(false);
     setSelectedSignatureId('');
+    setDraftId(null);
+    setLastSaved(null);
+    setHasUnsavedChanges(false);
   };
 
   // User selection handlers
@@ -243,6 +308,92 @@ function EmailCampaignModal({ isOpen, onClose }) {
       setSubject(template.subject || '');
       setContent(template.content || '');
     }
+  };
+
+  const handleSignatureSelect = (signatureId) => {
+    setSelectedSignatureId(signatureId);
+    if (signatureId) {
+      const selectedSignature = signatures.find(sig => sig.id === signatureId);
+      if (selectedSignature) {
+        // Append signature to existing content
+        const currentContent = content || '';
+        const signatureContent = selectedSignature.content || '';
+        if (currentContent && !currentContent.includes(signatureContent)) {
+          setContent(currentContent + '<br><br>' + signatureContent);
+        } else if (!currentContent) {
+          setContent(signatureContent);
+        }
+      }
+    }
+  };
+
+  // Draft handling functions
+  const handleSaveDraft = async (showToast = true) => {
+    if (!to.trim() && !subject.trim() && !content.trim()) {
+      if (showToast) showWarning('⚠️ Nothing to save as draft');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const draftData = {
+        id: draftId, // Will be null for new drafts
+        to_emails: to,
+        cc_emails: cc || '',
+        bcc_emails: bcc || '',
+        from_email: sendFrom,
+        subject: subject,
+        body: content,
+        priority: priority,
+        attachments_count: attachments.length,
+        signature_id: selectedSignatureId || null
+      };
+
+      const savedDraft = await saveEmailDraft(draftData);
+      setDraftId(savedDraft.id);
+      setLastSaved(new Date());
+      setHasUnsavedChanges(false);
+      
+      if (showToast) {
+        showSuccess('💾 Draft saved successfully!');
+      }
+    } catch (err) {
+      console.error('Error saving draft:', err);
+      if (showToast) {
+        showError('❌ Failed to save draft');
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleLoadDraft = (draft) => {
+    // Handle JSONB data from database
+    const parseRecipients = (recipients) => {
+      if (typeof recipients === 'string') {
+        try {
+          return JSON.parse(recipients);
+        } catch {
+          return [];
+        }
+      }
+      return Array.isArray(recipients) ? recipients : [];
+    };
+    
+    const toEmails = parseRecipients(draft.to_recipients).join(', ');
+    const ccEmails = parseRecipients(draft.cc_recipients).join(', ');
+    const bccEmails = parseRecipients(draft.bcc_recipients).join(', ');
+    
+    setTo(toEmails);
+    setCc(ccEmails);
+    setBcc(bccEmails);
+    setSubject(draft.subject || '');
+    setContent(draft.content || draft.body || '');
+    setPriority(draft.priority || 'normal');
+    setSelectedSignatureId(draft.signature_id || '');
+    setDraftId(draft.id);
+    setHasUnsavedChanges(false);
+    showSuccess('📝 Draft loaded successfully!');
   };
 
   // Attachment handlers
@@ -424,6 +575,29 @@ function EmailCampaignModal({ isOpen, onClose }) {
                   </div>
                 </div>
 
+                {/* Signature Dropdown */}
+                <div className="flex items-center">
+                  <label className="w-16 text-sm font-medium">Signature:</label>
+                  <div className="flex-1 flex items-center space-x-3">
+                    <select
+                      value={selectedSignatureId}
+                      onChange={(e) => handleSignatureSelect(e.target.value)}
+                      className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors min-w-[200px]"
+                      disabled={loading}
+                    >
+                      <option value="">📝 Select signature...</option>
+                      {signatures.map(signature => (
+                        <option key={signature.id} value={signature.id}>
+                          {signature.name}
+                        </option>
+                      ))}
+                    </select>
+                    {loading && (
+                      <span className="text-sm text-gray-500">Loading signatures...</span>
+                    )}
+                  </div>
+                </div>
+
                 {/* Attachments Section */}
                 <div className="flex items-start">
                   <label className="w-16 text-sm font-medium text-gray-700 mt-2">Attach:</label>
@@ -491,6 +665,26 @@ function EmailCampaignModal({ isOpen, onClose }) {
                     <FiEye className="inline mr-1" /> Preview
                   </button>
                   <button 
+                    onClick={() => handleSaveDraft(true)} 
+                    disabled={saving || (!to.trim() && !subject.trim() && !content.trim())}
+                    className="text-sm text-gray-600 hover:text-gray-800 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                    title="Save as draft"
+                  >
+                    {saving ? (
+                      <>
+                        <svg className="animate-spin -ml-1 mr-1 h-3 w-3 text-gray-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <FiSave className="inline mr-1" /> Save Draft
+                      </>
+                    )}
+                  </button>
+                  <button 
                     onClick={clearAllStates} 
                     className="text-sm text-gray-600 hover:text-gray-800 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors"
                     title="Clear all fields"
@@ -498,12 +692,37 @@ function EmailCampaignModal({ isOpen, onClose }) {
                     <FiSettings className="inline mr-1" /> Clear
                   </button>
                 </div>
+                
+                {/* Draft Status */}
+                <div className="flex items-center space-x-3 text-xs text-gray-500">
+                  {lastSaved && (
+                    <span>Last saved: {lastSaved.toLocaleTimeString()}</span>
+                  )}
+                  {hasUnsavedChanges && (
+                    <span className="text-orange-500">• Unsaved changes</span>
+                  )}
+                  {draftId && (
+                    <span className="text-blue-500">• Draft #{draftId.slice(-6)}</span>
+                  )}
+                </div>
                 <button
                   onClick={handleSendEmail}
-                  disabled={!to.trim() || !subject.trim() || !content.trim()}
-                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+                  disabled={!to.trim() || !subject.trim() || !content.trim() || sending}
+                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
                 >
-                  <FiSend className="inline mr-1" /> Send
+                  {sending ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Sending...
+                    </>
+                  ) : (
+                    <>
+                      <FiSend className="inline mr-1" /> Send
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -587,10 +806,23 @@ function EmailCampaignModal({ isOpen, onClose }) {
                   setIsPreviewModalOpen(false);
                   handleSendEmail();
                 }}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                disabled={sending}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
               >
-                <FiSend className="inline mr-2 w-4 h-4" />
-                Send Email
+                {sending ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Sending...
+                  </>
+                ) : (
+                  <>
+                    <FiSend className="inline mr-2 w-4 h-4" />
+                    Send Email
+                  </>
+                )}
               </button>
             </div>
           </div>

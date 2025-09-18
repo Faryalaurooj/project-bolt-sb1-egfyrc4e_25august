@@ -285,7 +285,7 @@ function Contacts() {
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex flex-wrap gap-1">
-                            {contact.tags.map((tag, index) => (
+                            {contact?.tags?.map((tag, index) => (
                               <span
                                 key={index}
                                 className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800"

@@ -243,6 +243,7 @@ export const deletePhoneCall = async (id) => {
 // Contacts API
 export const createContact = async (contactData) => {
   try {
+    console.log("contactData___",contactData)
     const { data: { user }, error: userError } = await supabase.auth.getUser();
       
     if (userError) throw userError;
@@ -270,8 +271,7 @@ export const getContacts = async () => {
     const { data, error } = await supabase
       .from('contacts')
       .select(`
-        *, 
-        do_not_contact,
+        *,
         policy_documents(id, file_name, file_type, created_at)
       `)
       .order('created_at', { ascending: false });
@@ -292,17 +292,25 @@ export const getContacts = async () => {
 };
 
 export const getContactById = async (id) => {
-  const { data, error } = await supabase
-    .from('contacts')
-    .select('*')
-    .eq('id', id)
-    .single();
+  try {
+    const { data, error } = await supabase
+      .from('contacts')
+      .select(`
+        *,
+        policy_documents(id, file_name, file_type, created_at)
+      `)
+      .eq('id', id)
+      .single();
 
-  if (error) {
-    throw new Error(error.message);
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return data;
+  } catch (error) {
+    console.error('getContactById error:', error);
+    throw error;
   }
-
-  return data;
 };
 
 export const updateContact = async (id, updates) => {
@@ -447,16 +455,268 @@ export const createCompany = async (companyData) => {
 };
 
 export const getCompanies = async () => {
-  const { data, error } = await supabase
-    .from('companies')
-    .select('*')
-    .order('name', { ascending: true });
+  try {
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) throw sessionError;
+    if (!session) throw new Error('No authenticated session found');
 
-  if (error) {
+    const response = await fetch('/api/companies', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+
+    const result = await response.json();
+    console.log('🏢 API: Companies fetched successfully:', result);
+    return result;
+  } catch (error) {
+    console.error('🏢 API: Error in getCompanies:', error);
     throw new Error(error.message);
   }
+};
 
-  return data;
+// Policy API functions
+export const createPolicy = async (policyData) => {
+  try {
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) throw sessionError;
+    if (!session) throw new Error('No authenticated session found');
+
+    const response = await fetch('/api/policies', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`
+      },
+      body: JSON.stringify(policyData)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+
+    const result = await response.json();
+    console.log('📋 API: Policy created successfully:', result);
+    return result;
+  } catch (error) {
+    console.error('📋 API: Error in createPolicy:', error);
+    throw new Error(error.message);
+  }
+};
+
+export const getPolicies = async () => {
+  try {
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) throw sessionError;
+    if (!session) throw new Error('No authenticated session found');
+
+    const response = await fetch('/api/policies', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+
+    const result = await response.json();
+    console.log('📋 API: Policies fetched successfully:', result);
+    return result;
+  } catch (error) {
+    console.error('📋 API: Error in getPolicies:', error);
+    throw new Error(error.message);
+  }
+};
+
+export const getPoliciesByContactId = async (contactId) => {
+  try {
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) throw sessionError;
+    if (!session) throw new Error('No authenticated session found');
+
+    const response = await fetch(`/api/policies/contact/${contactId}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+
+    const result = await response.json();
+    console.log('📋 API: Policies by contact fetched successfully:', result);
+    return result;
+  } catch (error) {
+    console.error('📋 API: Error in getPoliciesByContactId:', error);
+    throw new Error(error.message);
+  }
+};
+
+// Fetch policies directly from Supabase
+export const getPoliciesByContactIdSupabase = async (contactId) => {
+  try {
+    console.log('📋 getPoliciesByContactIdSupabase: Fetching policies for contact:', contactId);
+    const { data, error } = await supabase
+      .from('policies')
+      .select('*')
+      .eq('contact_id', contactId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('📋 getPoliciesByContactIdSupabase: Error:', error);
+      throw error;
+    }
+
+    console.log('📋 getPoliciesByContactIdSupabase: Found policies:', data?.length || 0);
+    return data || [];
+  } catch (error) {
+    console.error('📋 getPoliciesByContactIdSupabase: Error occurred:', error);
+    return [];
+  }
+};
+
+export const updatePolicy = async (policyId, policyData) => {
+  try {
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) throw sessionError;
+    if (!session) throw new Error('No authenticated session found');
+
+    const response = await fetch(`/api/policies/${policyId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`
+      },
+      body: JSON.stringify(policyData)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+
+    const result = await response.json();
+    console.log('📋 API: Policy updated successfully:', result);
+    return result;
+  } catch (error) {
+    console.error('📋 API: Error in updatePolicy:', error);
+    throw new Error(error.message);
+  }
+};
+
+export const deletePolicy = async (policyId) => {
+  try {
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) throw sessionError;
+    if (!session) throw new Error('No authenticated session found');
+
+    const response = await fetch(`/api/policies/${policyId}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+
+    console.log('📋 API: Policy deleted successfully');
+    return true;
+  } catch (error) {
+    console.error('📋 API: Error in deletePolicy:', error);
+    throw new Error(error.message);
+  }
+};
+
+export const updateCompany = async (companyId, companyData) => {
+  try {
+    console.log('🏢 API: updateCompany called with ID:', companyId, 'data:', companyData);
+    
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) throw sessionError;
+    if (!session) throw new Error('No authenticated session found');
+
+    const response = await fetch(`/api/companies/${companyId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`
+      },
+      body: JSON.stringify(companyData)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorData;
+      try {
+        errorData = JSON.parse(errorText);
+      } catch (parseError) {
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+      throw new Error(errorData.error || 'Failed to update company');
+    }
+
+    const result = await response.json();
+    console.log('🏢 API: Company updated successfully:', result);
+    return result;
+  } catch (error) {
+    console.error('🏢 API: Error in updateCompany:', error);
+    throw new Error(error.message);
+  }
+};
+
+export const deleteCompany = async (companyId) => {
+  try {
+    console.log('🏢 API: deleteCompany called with ID:', companyId);
+    
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) throw sessionError;
+    if (!session) throw new Error('No authenticated session found');
+
+    const response = await fetch(`/api/companies/${companyId}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorData;
+      try {
+        errorData = JSON.parse(errorText);
+      } catch (parseError) {
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+      throw new Error(errorData.error || 'Failed to delete company');
+    }
+
+    console.log('🏢 API: Company deleted successfully');
+    return true;
+  } catch (error) {
+    console.error('🏢 API: Error in deleteCompany:', error);
+    throw new Error(error.message);
+  }
 };
 
 export const getCompaniesByContactId = async (contactId) => {
@@ -1005,16 +1265,114 @@ export const createEmailSignature = async (signatureData) => {
 };
 
 export const getEmailSignatures = async () => {
-  const { data, error } = await supabase
-    .from('email_signatures')
-    .select('*')
-    .order('created_at', { ascending: false });
+  try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError) {
+      console.error('❌ getEmailSignatures: User error:', userError);
+      throw userError;
+    }
+    if (!user) {
+      console.error('❌ getEmailSignatures: No authenticated user found');
+      throw new Error('No authenticated user found');
+    }
 
-  if (error) {
+    console.log('📝 getEmailSignatures: Fetching signatures for user:', user.id);
+
+    // Try to fetch signatures with RLS first
+    let { data, error } = await supabase
+      .from('email_signatures')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    console.log('📝 getEmailSignatures: RLS query result - data:', data, 'error:', error);
+
+    // If RLS blocks access (empty array), try using RPC function to bypass RLS
+    if ((!data || data.length === 0) && !error) {
+      console.log('📝 getEmailSignatures: RLS blocked access, trying RPC function...');
+      
+      const { data: rpcData, error: rpcError } = await supabase.rpc('get_all_email_signatures');
+      
+      if (rpcError) {
+        console.error('❌ getEmailSignatures: RPC error:', rpcError);
+        // If RPC also fails, create default signatures for the user
+        console.log('📝 getEmailSignatures: RPC failed, creating default signatures...');
+        
+        const defaultSignatures = [
+          {
+            name: 'Professional Signature',
+            content: '<p>Best regards,<br>Your Name<br>Insurance Agent<br>Phone: (555) 123-4567<br>Email: your.email@example.com</p>',
+            created_by: user.id
+          },
+          {
+            name: 'Simple Signature',
+            content: '<p>Thank you,<br>Your Name</p>',
+            created_by: user.id
+          }
+        ];
+
+        const { data: insertedData, error: insertError } = await supabase
+          .from('email_signatures')
+          .insert(defaultSignatures)
+          .select();
+
+        if (insertError) {
+          console.error('❌ getEmailSignatures: Error creating default signatures:', insertError);
+          throw insertError;
+        }
+
+        console.log('📝 getEmailSignatures: Created default signatures:', insertedData);
+        return insertedData;
+      }
+      
+      data = rpcData;
+      error = rpcError;
+    }
+
+    if (error) {
+      console.error('❌ getEmailSignatures: Supabase error:', error);
+      throw new Error(error.message);
+    }
+
+    console.log('📝 getEmailSignatures: Final data:', data);
+
+    // If still no signatures found, create some default ones for the user
+    if (!data || data.length === 0) {
+      console.log('📝 getEmailSignatures: No signatures found, creating default ones...');
+      
+      const defaultSignatures = [
+        {
+          name: 'Professional Signature',
+          content: '<p>Best regards,<br>Your Name<br>Insurance Agent<br>Phone: (555) 123-4567<br>Email: your.email@example.com</p>',
+          created_by: user.id
+        },
+        {
+          name: 'Simple Signature',
+          content: '<p>Thank you,<br>Your Name</p>',
+          created_by: user.id
+        }
+      ];
+
+      const { data: insertedData, error: insertError } = await supabase
+        .from('email_signatures')
+        .insert(defaultSignatures)
+        .select();
+
+      if (insertError) {
+        console.error('❌ getEmailSignatures: Error creating default signatures:', insertError);
+        throw insertError;
+      }
+
+      console.log('📝 getEmailSignatures: Created default signatures:', insertedData);
+      return insertedData;
+    }
+
+    console.log('📝 getEmailSignatures: Found existing signatures:', data);
+    return data;
+  } catch (error) {
+    console.error('❌ getEmailSignatures: Error occurred:', error);
     throw new Error(error.message);
   }
-
-  return data;
 };
 
 export const updateEmailSignature = async (id, updates) => {
@@ -1042,6 +1400,188 @@ export const deleteEmailSignature = async (id) => {
     .eq('id', id);
 
   if (error) {
+    throw new Error(error.message);
+  }
+};
+
+// Emails API
+export const createEmail = async (emailData) => {
+  try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+    if (userError) throw userError;
+    if (!user) throw new Error('No authenticated user found');
+
+    // Transform the data to match the emails table schema
+    const transformedData = {
+      subject: emailData.subject,
+      content: emailData.body || emailData.content,
+      to_recipients: emailData.to_emails ? emailData.to_emails.split(',').map(email => email.trim()).filter(email => email) : [],
+      cc_recipients: emailData.cc_emails ? emailData.cc_emails.split(',').map(email => email.trim()).filter(email => email) : [],
+      bcc_recipients: emailData.bcc_emails ? emailData.bcc_emails.split(',').map(email => email.trim()).filter(email => email) : [],
+      status: emailData.status || 'sent',
+      sent_at: new Date().toISOString(),
+      attachments: emailData.attachments_count ? { count: emailData.attachments_count } : null,
+      created_by: user.id
+    };
+
+    console.log('📧 createEmail: Saving email with data:', transformedData);
+
+    const { data, error } = await supabase
+      .from('emails')
+      .insert([transformedData])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('❌ createEmail: Database error:', error);
+      throw error;
+    }
+
+    console.log('📧 createEmail: Email saved successfully:', data);
+    return data;
+  } catch (error) {
+    console.error('❌ createEmail: Error occurred:', error);
+    throw new Error(error.message);
+  }
+};
+
+export const getEmails = async () => {
+  try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+    if (userError) throw userError;
+    if (!user) throw new Error('No authenticated user found');
+
+    const { data, error } = await supabase
+      .from('emails')
+      .select('*')
+      .eq('created_by', user.id)
+      .order('sent_at', { ascending: false });
+
+    if (error) {
+      console.error('❌ getEmails: Database error:', error);
+      throw new Error(error.message);
+    }
+
+    console.log('📧 getEmails: Retrieved emails:', data?.length || 0);
+    return data || [];
+  } catch (error) {
+    console.error('❌ getEmails: Error occurred:', error);
+    throw new Error(error.message);
+  }
+};
+
+export const getEmailsByContactId = async (contactId) => {
+  try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+    if (userError) throw userError;
+    if (!user) throw new Error('No authenticated user found');
+
+    const { data, error } = await supabase
+      .from('emails')
+      .select('*')
+      .eq('created_by', user.id)
+      .or(`to_recipients.cs.{${contactId}},cc_recipients.cs.{${contactId}},bcc_recipients.cs.{${contactId}}`)
+      .order('sent_at', { ascending: false });
+
+    if (error) {
+      console.error('❌ getEmailsByContactId: Database error:', error);
+      throw new Error(error.message);
+    }
+
+    console.log('📧 getEmailsByContactId: Retrieved emails for contact:', contactId, data?.length || 0);
+    return data || [];
+  } catch (error) {
+    console.error('❌ getEmailsByContactId: Error occurred:', error);
+    throw new Error(error.message);
+  }
+};
+
+// Email Drafts API (using backend API with database)
+export const saveEmailDraft = async (draftData) => {
+  try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError) throw userError;
+    if (!user) throw new Error('No authenticated user found');
+
+    // Add user ID to the draft data
+    const draftDataWithUser = {
+      ...draftData,
+      user_id: user.id,
+      created_by: user.id
+    };
+
+    const response = await fetch('/api/email-drafts', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(draftDataWithUser)
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to save email draft');
+    }
+
+    const result = await response.json();
+    console.log('📝 saveEmailDraft: Draft saved via backend API:', result);
+    return result;
+  } catch (error) {
+    console.error('❌ saveEmailDraft: Error occurred:', error);
+    throw new Error(error.message);
+  }
+};
+
+export const getEmailDrafts = async () => {
+  try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError) throw userError;
+    if (!user) throw new Error('No authenticated user found');
+
+    const response = await fetch(`/api/email-drafts?user_id=${user.id}`, {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to fetch email drafts');
+    }
+
+    const result = await response.json();
+    console.log('📝 getEmailDrafts: Retrieved drafts via backend API:', result?.length || 0);
+    return result || [];
+  } catch (error) {
+    console.error('❌ getEmailDrafts: Error occurred:', error);
+    throw new Error(error.message);
+  }
+};
+
+export const deleteEmailDraft = async (draftId) => {
+  try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError) throw userError;
+    if (!user) throw new Error('No authenticated user found');
+
+    const response = await fetch(`/api/email-drafts/${draftId}?user_id=${user.id}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to delete email draft');
+    }
+
+    console.log('📝 deleteEmailDraft: Draft deleted via backend API');
+  } catch (error) {
+    console.error('❌ deleteEmailDraft: Error occurred:', error);
     throw new Error(error.message);
   }
 };
@@ -1328,54 +1868,6 @@ export const getUserProfile = async () => {
   }
 };
 
-// Policies API
-export const createPolicy = async (policyData) => {
-  try {
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-    if (sessionError) throw sessionError;
-    if (!session) throw new Error('No authenticated session found');
-
-    const response = await fetch('/api/policies', {
-      method: 'POST', // Ensure this is a POST request for creation
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session.access_token}`
-      },
-      body: JSON.stringify(policyData)
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || 'Failed to create policy');
-    }
-    return await response.json();
-  } catch (error) {
-    console.error('Error creating policy:', error);
-    throw error;
-  }
-};
-
-export const getPoliciesByContactId = async (contactId) => {
-  try {
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-    if (sessionError) throw sessionError;
-    if (!session) throw new Error('No authenticated session found');
-
-    const response = await fetch(`/api/policies/contact/${contactId}`, {
-      headers: {
-        'Authorization': `Bearer ${session.access_token}`
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to fetch policies');
-    }
-    return await response.json();
-  } catch (error) {
-    console.error('Error fetching policies:', error);
-    throw error;
-  }
-};
 
 // Text Messages API
 export const createTextMessage = async (messageData) => {

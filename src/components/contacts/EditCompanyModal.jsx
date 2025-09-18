@@ -1,13 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Dialog } from '@headlessui/react';
-import { FiX, FiHome, FiGlobe, FiMapPin, FiPhone, FiMail } from 'react-icons/fi';
-import { createCompany } from '../../services/api';
-import { useAuth } from '../../context/AuthContext';
+import { FiX, FiHome, FiGlobe, FiMapPin, FiPhone, FiMail, FiEdit2, FiTrash2 } from 'react-icons/fi';
+import { updateCompany, deleteCompany } from '../../services/api';
 
-function NewCompanyModal({ isOpen, onClose, onCompanySaved }) {
-
-  const { user } = useAuth();
-
+function EditCompanyModal({ isOpen, onClose, company, onCompanyUpdated, onCompanyDeleted }) {
   const [formData, setFormData] = useState({
     name: '',
     domain: '',
@@ -22,6 +18,25 @@ function NewCompanyModal({ isOpen, onClose, onCompanySaved }) {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  // Update form data when company prop changes
+  useEffect(() => {
+    if (company) {
+      setFormData({
+        name: company.name || '',
+        domain: company.domain || '',
+        address: company.address || '',
+        city: company.city || '',
+        state: company.state || '',
+        zip: company.zip || '',
+        phone: company.phone || '',
+        email: company.email || '',
+        industry: company.industry || '',
+        notes: company.notes || ''
+      });
+    }
+  }, [company]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -33,48 +48,59 @@ function NewCompanyModal({ isOpen, onClose, onCompanySaved }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log('🏢 NewCompanyModal: Form submitted with data:', formData);
+    console.log('🏢 EditCompanyModal: Form submitted with data:', formData);
     setLoading(true);
     setError(null);
 
     try {
-      console.log('🏢 NewCompanyModal: Calling createCompany API...');
-      await createCompany({...formData, created_by: user.id});
-      console.log('🏢 NewCompanyModal: Company created successfully');
+      console.log('🏢 EditCompanyModal: Calling updateCompany API...');
+      await updateCompany(company.id, formData);
+      console.log('🏢 EditCompanyModal: Company updated successfully');
       
-      // Reset form
-      setFormData({
-        name: '',
-        domain: '',
-        address: '',
-        city: '',
-        state: '',
-        zip: '',
-        phone: '',
-        email: '',
-        industry: '',
-        notes: ''
-      });
-      
-      
-      if (onCompanySaved) {
-        console.log('🏢 NewCompanyModal: Calling onCompanySaved callback');
-        onCompanySaved();
+      if (onCompanyUpdated) {
+        console.log('🏢 EditCompanyModal: Calling onCompanyUpdated callback');
+        onCompanyUpdated();
       }
-      console.log('🏢 NewCompanyModal: Closing modal');
+      console.log('🏢 EditCompanyModal: Closing modal');
       onClose();
     } catch (err) {
-      console.error('🏢 NewCompanyModal: Error saving company:', err);
-      console.error('🏢 NewCompanyModal: Error details:', {
+      console.error('🏢 EditCompanyModal: Error updating company:', err);
+      console.error('🏢 EditCompanyModal: Error details:', {
         message: err.message,
         stack: err.stack,
         formData: formData
       });
-      setError('Failed to save company. Please try again.');
+      setError('Failed to update company. Please try again.');
     } finally {
       setLoading(false);
     }
   };
+
+  const handleDelete = async () => {
+    console.log('🏢 EditCompanyModal: Deleting company:', company.id);
+    setLoading(true);
+    setError(null);
+
+    try {
+      await deleteCompany(company.id);
+      console.log('🏢 EditCompanyModal: Company deleted successfully');
+      
+      if (onCompanyDeleted) {
+        console.log('🏢 EditCompanyModal: Calling onCompanyDeleted callback');
+        onCompanyDeleted();
+      }
+      console.log('🏢 EditCompanyModal: Closing modal');
+      onClose();
+    } catch (err) {
+      console.error('🏢 EditCompanyModal: Error deleting company:', err);
+      setError('Failed to delete company. Please try again.');
+    } finally {
+      setLoading(false);
+      setShowDeleteConfirm(false);
+    }
+  };
+
+  if (!company) return null;
 
   return (
     <Dialog
@@ -87,17 +113,17 @@ function NewCompanyModal({ isOpen, onClose, onCompanySaved }) {
 
         <div className="relative bg-white w-full max-w-2xl mx-4 rounded-xl shadow-2xl">
           {/* Header */}
-          <div className="bg-gradient-to-r from-blue-500 to-purple-600 p-6 rounded-t-xl">
+          <div className="bg-gradient-to-r from-orange-500 to-red-600 p-6 rounded-t-xl">
             <div className="flex justify-between items-center">
               <div className="flex items-center space-x-3">
                 <div className="w-10 h-10 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
-                  <FiHome className="w-5 h-5 text-white" />
+                  <FiEdit2 className="w-5 h-5 text-white" />
                 </div>
                 <div>
                   <Dialog.Title className="text-xl font-semibold text-white">
-                    Add New Company
+                    Edit Company
                   </Dialog.Title>
-                  <p className="text-blue-100 text-sm">Create a new company record</p>
+                  <p className="text-orange-100 text-sm">Update company information</p>
                 </div>
               </div>
               <button
@@ -129,7 +155,7 @@ function NewCompanyModal({ isOpen, onClose, onCompanySaved }) {
                   name="name"
                   value={formData.name}
                   onChange={handleChange}
-                  className="w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 focus:ring-2"
+                  className="w-full rounded-lg border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500 focus:ring-2"
                   placeholder="Enter company name"
                   required
                 />
@@ -147,7 +173,7 @@ function NewCompanyModal({ isOpen, onClose, onCompanySaved }) {
                     name="domain"
                     value={formData.domain}
                     onChange={handleChange}
-                    className="w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 focus:ring-2"
+                    className="w-full rounded-lg border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500 focus:ring-2"
                     placeholder="example.com"
                   />
                 </div>
@@ -160,7 +186,7 @@ function NewCompanyModal({ isOpen, onClose, onCompanySaved }) {
                     name="industry"
                     value={formData.industry}
                     onChange={handleChange}
-                    className="w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 focus:ring-2"
+                    className="w-full rounded-lg border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500 focus:ring-2"
                   >
                     <option value="">Select industry</option>
                     <option value="Insurance">Insurance</option>
@@ -186,7 +212,7 @@ function NewCompanyModal({ isOpen, onClose, onCompanySaved }) {
                     name="phone"
                     value={formData.phone}
                     onChange={handleChange}
-                    className="w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 focus:ring-2"
+                    className="w-full rounded-lg border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500 focus:ring-2"
                     placeholder="(555) 123-4567"
                   />
                 </div>
@@ -201,7 +227,7 @@ function NewCompanyModal({ isOpen, onClose, onCompanySaved }) {
                     name="email"
                     value={formData.email}
                     onChange={handleChange}
-                    className="w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 focus:ring-2"
+                    className="w-full rounded-lg border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500 focus:ring-2"
                     placeholder="contact@company.com"
                   />
                 </div>
@@ -218,7 +244,7 @@ function NewCompanyModal({ isOpen, onClose, onCompanySaved }) {
                   name="address"
                   value={formData.address}
                   onChange={handleChange}
-                  className="w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 focus:ring-2"
+                  className="w-full rounded-lg border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500 focus:ring-2"
                   placeholder="Street address"
                 />
               </div>
@@ -234,7 +260,7 @@ function NewCompanyModal({ isOpen, onClose, onCompanySaved }) {
                     name="city"
                     value={formData.city}
                     onChange={handleChange}
-                    className="w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 focus:ring-2"
+                    className="w-full rounded-lg border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500 focus:ring-2"
                     placeholder="City"
                   />
                 </div>
@@ -248,7 +274,7 @@ function NewCompanyModal({ isOpen, onClose, onCompanySaved }) {
                     name="state"
                     value={formData.state}
                     onChange={handleChange}
-                    className="w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 focus:ring-2"
+                    className="w-full rounded-lg border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500 focus:ring-2"
                     placeholder="State"
                   />
                 </div>
@@ -262,7 +288,7 @@ function NewCompanyModal({ isOpen, onClose, onCompanySaved }) {
                     name="zip"
                     value={formData.zip}
                     onChange={handleChange}
-                    className="w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 focus:ring-2"
+                    className="w-full rounded-lg border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500 focus:ring-2"
                     placeholder="12345"
                   />
                 </div>
@@ -278,40 +304,88 @@ function NewCompanyModal({ isOpen, onClose, onCompanySaved }) {
                   value={formData.notes}
                   onChange={handleChange}
                   rows={3}
-                  className="w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 focus:ring-2"
+                  className="w-full rounded-lg border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500 focus:ring-2"
                   placeholder="Additional notes about the company..."
                 />
               </div>
 
               {/* Submit Buttons */}
-              <div className="flex justify-end space-x-3 pt-4">
+              <div className="flex justify-between pt-4">
                 <button
                   type="button"
-                  onClick={onClose}
-                  className="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
+                  onClick={() => setShowDeleteConfirm(true)}
                   disabled={loading}
-                  className="px-6 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold rounded-lg hover:from-blue-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 disabled:hover:scale-100 shadow-lg flex items-center"
+                  className="px-4 py-2 bg-red-500 text-white font-semibold rounded-lg hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center"
                 >
-                  {loading ? (
-                    <>
-                      <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <FiHome className="w-4 h-4 mr-2" />
-                      Add Company
-                    </>
-                  )}
+                  <FiTrash2 className="w-4 h-4 mr-2" />
+                  Delete Company
                 </button>
+
+                <div className="flex space-x-3">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="px-6 py-2 bg-gradient-to-r from-orange-500 to-red-600 text-white font-semibold rounded-lg hover:from-orange-600 hover:to-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 disabled:hover:scale-100 shadow-lg flex items-center"
+                  >
+                    {loading ? (
+                      <>
+                        <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
+                        Updating...
+                      </>
+                    ) : (
+                      <>
+                        <FiEdit2 className="w-4 h-4 mr-2" />
+                        Update Company
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </form>
 
+            {/* Delete Confirmation Modal */}
+            {showDeleteConfirm && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-60">
+                <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4">
+                  <div className="flex items-center space-x-3 mb-4">
+                    <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                      <FiTrash2 className="w-5 h-5 text-red-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">Delete Company</h3>
+                      <p className="text-sm text-gray-600">This action cannot be undone.</p>
+                    </div>
+                  </div>
+                  
+                  <p className="text-gray-700 mb-6">
+                    Are you sure you want to delete <strong>{company.name}</strong>? This will permanently remove the company and all associated data.
+                  </p>
+                  
+                  <div className="flex justify-end space-x-3">
+                    <button
+                      onClick={() => setShowDeleteConfirm(false)}
+                      className="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleDelete}
+                      disabled={loading}
+                      className="px-4 py-2 bg-red-500 text-white font-semibold rounded-lg hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+                    >
+                      {loading ? 'Deleting...' : 'Delete Company'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -319,4 +393,9 @@ function NewCompanyModal({ isOpen, onClose, onCompanySaved }) {
   );
 }
 
-export default NewCompanyModal;
+export default EditCompanyModal;
+
+
+
+
+

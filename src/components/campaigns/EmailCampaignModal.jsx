@@ -1,840 +1,671 @@
 import React, { useState, useEffect } from 'react';
 import { Dialog } from '@headlessui/react';
-import { FiX, FiSend, FiSave, FiEye, FiSettings, FiChevronDown, FiChevronUp, FiPaperclip, FiTrash2 } from 'react-icons/fi';
+import { FiX, FiSend, FiUsers, FiMail, FiSearch, FiSettings, FiEye, FiCalendar, FiUser, FiTag, FiEdit2 } from 'react-icons/fi';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
-import { getEmailTemplates, getEmailSignatures, getUsers, createEmail, saveEmailDraft, getEmailDrafts, deleteEmailDraft } from '../../services/api';
-import TemplateSelectModal from './TemplateSelectModal';
-import { useToast } from '../../hooks/useToast';
 import { useAuth } from '../../context/AuthContext';
-import { sendOutlookEmail } from '../../services/outlookSync';
+import { useToast } from '../../hooks/useToast';
+import { createEmailTemplate, updateEmailTemplate, sendEmailCampaign, searchContactsAndUsers } from '../../services/api';
 
-
-function EmailCampaignModal({ isOpen, onClose }) {
-  const { showSuccess, showInfo, showWarning, showError } = useToast();
+function EmailCampaignModal({ 
+  isOpen, 
+  onClose, 
+  mode, // 'send', 'edit', 'saveAs', 'create', 'preview'
+  initialTemplateData = null,
+  onTemplateSaved = () => { },
+  preSelectedMedia = null
+}) {
   const { user } = useAuth();
+  const { showSuccess, showInfo, showError } = useToast();
+  
+  // Internal modal mode state to handle transitions between preview, edit, and send
+  const [currentModalMode, setCurrentModalMode] = useState(mode);
+  
+  const [formData, setFormData] = useState({
+    title: '',
+    subject: '',
+    content: '',
+    recipients: [],
+    sendTime: 'now',
+    scheduledDate: '',
+    scheduledTime: '',
+    category: 'MY TEMPLATES'
+  });
 
-  const [users, setUsers] = useState([]);
-  const [sendFrom, setSendFrom] = useState('');
-  const [usersLoading, setUsersLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errors, setErrors] = useState({});
+  const [searchTerm, setSearchTerm] = useState('');
+  const [availableContacts, setAvailableContacts] = useState([]);
+  const [selectedTags, setSelectedTags] = useState([]);
+  const [contactsLoading, setContactsLoading] = useState(false);
 
-  // Email compose fields
-  const [to, setTo] = useState('');
-  const [cc, setCc] = useState('');
-  const [bcc, setBcc] = useState('');
-  const [subject, setSubject] = useState('');
-  const [content, setContent] = useState('');
-  const [priority, setPriority] = useState('normal');
-  const [attachments, setAttachments] = useState([]);
-
-  // UI state
-  const [showCc, setShowCc] = useState(false);
-  const [showBcc, setShowBcc] = useState(false);
-  const [showAdvanced, setShowAdvanced] = useState(false);
-
-  // Template and signature state
-  const [selectedSignatureId, setSelectedSignatureId] = useState('');
-  const [templates, setTemplates] = useState([]);
-  const [signatures, setSignatures] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [draftId, setDraftId] = useState(null);
-  const [lastSaved, setLastSaved] = useState(null);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-
-  // Modal states
-  const [isTemplateSelectModalOpen, setIsTemplateSelectModalOpen] = useState(false);
-  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
-
-  useEffect(() => {
-    const fetchUsers = async () => {
-      try {
-        setUsersLoading(true);
-        const usersData = await getUsers();
-        console.log('Fetched users data:', usersData);
-        setUsers(usersData || []);
-      } catch (err) {
-        console.error('Error fetching users:', err);
-        setUsers([]);
-      } finally {
-        setUsersLoading(false);
-      }
-    };
-
-    if (isOpen) {
-      fetchUsers();
-    } else {
-      // Clear states when modal is closed
-      clearAllStates();
-    }
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (users.length > 0 && user) {
-      let userData = users.find(u => u.email === user.email);
-      console.log("users",users);
-      setSendFrom(userData?.outlook_email || userData?.email || user?.email || '');
-      
-    }
-  }, [users, user]);
-
-  useEffect(() => {
-    if (isOpen) {
-      fetchData();
-    }
-  }, [isOpen]);
-
-  // Auto-save draft functionality
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const autoSaveTimeout = setTimeout(() => {
-      if (hasUnsavedChanges && (to.trim() || subject.trim() || content.trim())) {
-        handleSaveDraft();
-      }
-    }, 3000); // Auto-save every 3 seconds
-
-    return () => clearTimeout(autoSaveTimeout);
-  }, [to, subject, content, hasUnsavedChanges, isOpen]);
-
-  // Track changes for auto-save
-  useEffect(() => {
-    if (isOpen) {
-      setHasUnsavedChanges(true);
-    }
-  }, [to, subject, content, cc, bcc, priority, selectedSignatureId]);
-
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      const [templatesData, signaturesData] = await Promise.all([
-        getEmailTemplates(),
-        getEmailSignatures()
-      ]);
-      setTemplates(templatesData || []);
-      setSignatures(signaturesData || []);
-    } catch (err) {
-      console.error('Error fetching data:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const popularTags = [
+    { id: 'all', label: 'All Contacts', count: 150 },
+    { id: 'prospect', label: 'Prospect', count: 45 },
+    { id: 'personal-lines', label: 'Personal Lines', count: 89 },
+    { id: 'client', label: 'Client', count: 67 },
+    { id: 'personal', label: 'Personal', count: 23 }
+  ];
 
   const modules = {
     toolbar: [
-      [{ 'font': [] }, { 'size': ['small', false, 'large', 'huge'] }],
-      ['bold', 'italic', 'underline', 'strike'],
-      [{ 'color': [] }, { 'background': [] }],
-      [{ 'align': [] }],
-      [{ 'list': 'ordered' }, { 'list': 'bullet' }],
-      ['blockquote', 'code-block'],
-      ['link', 'image'],
+      ['bold', 'italic', 'underline'],
+      [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+      ['link'],
       ['clean']
     ]
   };
 
-  const formats = [
-    'font', 'size', 'bold', 'italic', 'underline', 'strike', 'blockquote',
-    'list', 'bullet', 'indent', 'link', 'image', 'color', 'background', 'align'
-  ];
-
-  const handleSendEmail = async () => {
-    if (!to.trim()) {
-      showWarning('⚠️ Please enter at least one recipient');
-      return;
-    }
-    if (!subject.trim()) {
-      showWarning('⚠️ Please enter a subject');
-      return;
-    }
-    if (!content.trim()) {
-      showWarning('⚠️ Please enter a message');
-      return;
-    }
-
-    setSending(true);
-    try {
-      const emailData = {
-        to: to.split(',').map((e) => e.trim()),
-        cc: cc ? cc.split(',').map((e) => e.trim()) : [],
-        bcc: bcc ? bcc.split(',').map((e) => e.trim()) : [],
-        subject,
-        body: content,
-        isHtml: true,
-        attachments: attachments
-      };
-
-      // Send email via Outlook
-      await sendOutlookEmail(sendFrom, emailData);
-      
-      // Save email to database
-      try {
-        const emailRecord = {
-          subject: subject,
-          body: content,
-          status: 'sent',
-          to_emails: to,
-          cc_emails: cc || '',
-          bcc_emails: bcc || '',
-          from_email: sendFrom,
-          priority: priority,
-          attachments_count: attachments.length
-        };
+  // Initialize form data when modal opens or template data changes
+  useEffect(() => {
+    if (isOpen) {
+      setCurrentModalMode(mode); // Reset to initial mode when modal opens
+      if (initialTemplateData) {
+        const baseContent = initialTemplateData.content || '';
+        const userSignature = generateUserSignature();
         
-        await createEmail(emailRecord);
-        console.log('Email saved to database successfully');
-      } catch (dbError) {
-        console.error('Error saving email to database:', dbError);
-        // Don't fail the entire operation if database save fails
-        showWarning('⚠️ Email sent but failed to save to database');
+        setFormData({
+          title: mode === 'saveAs' ? `${initialTemplateData.title} (Copy)` : initialTemplateData.title || '',
+          subject: initialTemplateData.subject || '',
+          content: baseContent.includes('Sincerely,') ? baseContent : `${baseContent}\n\n${userSignature}`,
+          recipients: [],
+          sendTime: 'now',
+          scheduledDate: '',
+          scheduledTime: '',
+          category: initialTemplateData.category || 'MY TEMPLATES'
+        });
+      } else {
+        // Reset form for new template
+        setFormData({
+          title: '',
+          subject: '',
+          content: generateUserSignature(),
+          recipients: [],
+          sendTime: 'now',
+          scheduledDate: '',
+          scheduledTime: '',
+          category: 'MY TEMPLATES'
+        });
       }
-      
-      showSuccess('📧 Email sent successfully!');
-      
-      // Delete draft if it exists
-      if (draftId) {
-        try {
-          await deleteEmailDraft(draftId);
-          console.log('Draft deleted after successful send');
-        } catch (err) {
-          console.error('Error deleting draft:', err);
-        }
+      setErrors({});
+      fetchContacts();
+    }
+  }, [isOpen, initialTemplateData, mode, user]);
+
+  const generateUserSignature = () => {
+    const userName = user?.first_name && user?.last_name
+      ? `${user.first_name} ${user.last_name}` 
+      : user?.email?.split('@')[0] || 'Team Member';
+
+    return `<div style="font-family: sans-serif; font-size: 12px; color: #555; margin-top: 20px; padding-top: 10px; border-top: 1px solid #eee;">
+Sincerely,<br>
+${userName}<br>
+Customer Service Manager at Cusmano Agency<br>
+Phone 203-394-6645 Fax 203-394-6646<br>
+Web www.cusmanoagency.com<br>
+Email alisha@cusmanoagency.com<br>
+425 Kings Hwy E, Fairfield, CT 06825</div>`;
+  };
+
+  const fetchContacts = async () => {
+    try {
+      setContactsLoading(true);
+      const contacts = await searchContactsAndUsers('');
+      setAvailableContacts(contacts || []);
+    } catch (error) {
+      console.error('Error fetching contacts:', error);
+      setAvailableContacts([]);
+    } finally {
+      setContactsLoading(false);
+    }
+  };
+
+  const handleInputChange = (field, value) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+    if (errors[field]) {
+      setErrors(prev => ({ ...prev, [field]: '' }));
+    }
+  };
+
+  const handleTagToggle = (tag) => {
+    setSelectedTags(prev => {
+      const isSelected = prev.find(t => t.id === tag.id);
+      if (isSelected) {
+        return prev.filter(t => t.id !== tag.id);
+      } else {
+        return [...prev, tag];
       }
-      
-      // Clear all states after successful send
-      clearAllStates();
+    });
+  };
+
+  const handleRecipientAdd = (contact) => {
+    setFormData(prev => ({
+      ...prev,
+      recipients: [...prev.recipients, contact]
+    }));
+  };
+
+  const validateForm = () => {
+    const newErrors = {};
+    
+    if ((mode === 'edit' || mode === 'saveAs' || mode === 'create') && !formData.title.trim()) {
+      newErrors.title = 'Template title is required';
+    }
+    
+    if (!formData.subject.trim()) {
+      newErrors.subject = 'Subject is required';
+    }
+    
+    if (!formData.content.trim()) {
+      newErrors.content = 'Content is required';
+    }
+
+    if (mode === 'send' && formData.recipients.length === 0 && selectedTags.length === 0) {
+      newErrors.recipients = 'Please select recipients or tags';
+    }
+
+    if (formData.sendTime === 'scheduled') {
+      if (!formData.scheduledDate) {
+        newErrors.scheduledDate = 'Scheduled date is required';
+      }
+      if (!formData.scheduledTime) {
+        newErrors.scheduledTime = 'Scheduled time is required';
+      }
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    // Handle preview mode transitions
+    if (currentModalMode === 'preview') {
+      setCurrentModalMode('send');
+      return;
+    }
+    
+    if (!validateForm()) {
+      return;
+    }
+
+    setIsLoading(true);
+    
+    try {
+      if (currentModalMode === 'send') {
+        // Send email campaign
+        await sendEmailCampaign({
+          subject: formData.subject,
+          content: formData.content,
+          recipients: formData.recipients,
+          tags: selectedTags,
+          sendTime: formData.sendTime,
+          scheduledDate: formData.scheduledDate,
+          scheduledTime: formData.scheduledTime
+        });
+        showSuccess('📧 Email campaign sent successfully!');
+      } else if (currentModalMode === 'edit') {
+        // Update existing template
+        await updateEmailTemplate(initialTemplateData.id, {
+          title: formData.title,
+          subject: formData.subject,
+          content: formData.content,
+          category: formData.category
+        });
+        showSuccess('📝 Template updated successfully!');
+        onTemplateSaved();
+      } else if (currentModalMode === 'saveAs' || currentModalMode === 'create') {
+        // Create new template
+        await createEmailTemplate({
+          title: formData.title,
+          subject: formData.subject,
+          content: formData.content,
+          category: formData.category
+        });
+        showSuccess('💾 Template saved successfully!');
+        onTemplateSaved();
+      }
       
       onClose();
-    } catch (err) {
-      console.error('Error sending email:', err);
-      showError('❌ Failed to send email');
+    } catch (error) {
+      console.error('Error processing request:', error);
+      const action = currentModalMode === 'send' ? 'send email campaign' : 
+                    currentModalMode === 'edit' ? 'update template' : 'save template';
+      showError(`Failed to ${action}. Please try again.`);
     } finally {
-      setSending(false);
+      setIsLoading(false);
     }
   };
 
-  // Function to clear all form states
-  const clearAllStates = () => {
-    setTo('');
-    setCc('');
-    setBcc('');
-    setSubject('');
-    setContent('');
-    setPriority('normal');
-    setAttachments([]);
-    setShowCc(false);
-    setShowBcc(false);
-    setShowAdvanced(false);
-    setSelectedSignatureId('');
-    setDraftId(null);
-    setLastSaved(null);
-    setHasUnsavedChanges(false);
-  };
-
-  // User selection handlers
-  const handleUserSelect = (field, selectedUser) => {
-    console.log('handleUserSelect called with:', field, selectedUser);
-    
-    if (!selectedUser) {
-      console.log('Invalid user:', selectedUser);
-      return;
-    }
-    const selectedEmail = selectedUser.outlook_email || selectedUser.email;
-    if (!selectedEmail) {
-      console.log('Missing both outlook_email and email on user:', selectedUser);
-      return;
-    }
-    
-    const currentEmails = field === 'to' ? to : field === 'cc' ? cc : bcc;
-    console.log('Current emails for field', field, ':', currentEmails);
-    
-    const emailList = currentEmails ? currentEmails.split(',').map(e => e.trim()).filter(e => e) : [];
-    console.log('Parsed email list:', emailList);
-    
-    if (!emailList.includes(selectedEmail)) {
-      const newEmailList = [...emailList, selectedEmail];
-      const newValue = newEmailList.join(', ');
-      console.log('New email value:', newValue);
-      
-      if (field === 'to') {
-        console.log('Setting TO field to:', newValue);
-        setTo(newValue);
-      } else if (field === 'cc') {
-        console.log('Setting CC field to:', newValue);
-        setCc(newValue);
-      } else if (field === 'bcc') {
-        console.log('Setting BCC field to:', newValue);
-        setBcc(newValue);
-      }
-    } else {
-      console.log('Email already exists in list');
+  const getModalTitle = () => {
+    switch (currentModalMode) {
+      case 'preview': return initialTemplateData?.title || 'Email Template Preview';
+      case 'edit': return 'Edit Email Template';
+      case 'saveAs': return 'Save Template As';
+      case 'create': return 'Create New Template';
+      default: return initialTemplateData?.title || 'Send Email Campaign';
     }
   };
 
-  const removeEmail = (field, emailToRemove) => {
-    const currentEmails = field === 'to' ? to : field === 'cc' ? cc : bcc;
-    const emailList = currentEmails.split(',').map(e => e.trim()).filter(e => e !== emailToRemove);
-    const newValue = emailList.join(', ');
-    
-    if (field === 'to') setTo(newValue);
-    else if (field === 'cc') setCc(newValue);
-    else if (field === 'bcc') setBcc(newValue);
-  };
-
-  const handleUserDropdownChange = (field, event) => {
-    const selectedUserId = event.target.value;
-    console.log('Selected user ID (raw):', selectedUserId);
-    console.log('Available users:', users);
-    
-    if (selectedUserId && selectedUserId !== '') {
-      // Try to find user by ID (handle both string and number IDs)
-      const selectedUser = users.find(u => u.id == selectedUserId || u.id === selectedUserId);
-      console.log('Found selected user:', selectedUser);
-      
-      if (selectedUser) {
-        console.log('Calling handleUserSelect with:', field, selectedUser);
-        handleUserSelect(field, selectedUser);
-      } else {
-        console.log('No user found with ID:', selectedUserId);
+  const getSubmitButtonText = () => {
+    if (isLoading) {
+      switch (currentModalMode) {
+        case 'preview': return 'Loading...';
+        case 'edit': return 'Updating...';
+        case 'saveAs': 
+        case 'create': return 'Saving...';
+        default: return 'Sending...';
       }
     }
-    // Reset dropdown to default option
-    event.target.value = '';
-  };
-
-  const handleTemplateSelect = (template) => {
-    if (template) {
-      setSubject(template.subject || '');
-      setContent(template.content || '');
-    }
-  };
-
-  const handleSignatureSelect = (signatureId) => {
-    setSelectedSignatureId(signatureId);
-    if (signatureId) {
-      const selectedSignature = signatures.find(sig => sig.id === signatureId);
-      if (selectedSignature) {
-        // Append signature to existing content
-        const currentContent = content || '';
-        const signatureContent = selectedSignature.content || '';
-        if (currentContent && !currentContent.includes(signatureContent)) {
-          setContent(currentContent + '<br><br>' + signatureContent);
-        } else if (!currentContent) {
-          setContent(signatureContent);
-        }
-      }
-    }
-  };
-
-  // Draft handling functions
-  const handleSaveDraft = async (showToast = true) => {
-    if (!to.trim() && !subject.trim() && !content.trim()) {
-      if (showToast) showWarning('⚠️ Nothing to save as draft');
-      return;
-    }
-
-    setSaving(true);
-    try {
-      const draftData = {
-        id: draftId, // Will be null for new drafts
-        to_emails: to,
-        cc_emails: cc || '',
-        bcc_emails: bcc || '',
-        from_email: sendFrom,
-        subject: subject,
-        body: content,
-        priority: priority,
-        attachments_count: attachments.length,
-        signature_id: selectedSignatureId || null
-      };
-
-      const savedDraft = await saveEmailDraft(draftData);
-      setDraftId(savedDraft.id);
-      setLastSaved(new Date());
-      setHasUnsavedChanges(false);
-      
-      if (showToast) {
-        showSuccess('💾 Draft saved successfully!');
-      }
-    } catch (err) {
-      console.error('Error saving draft:', err);
-      if (showToast) {
-        showError('❌ Failed to save draft');
-      }
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleLoadDraft = (draft) => {
-    // Handle JSONB data from database
-    const parseRecipients = (recipients) => {
-      if (typeof recipients === 'string') {
-        try {
-          return JSON.parse(recipients);
-        } catch {
-          return [];
-        }
-      }
-      return Array.isArray(recipients) ? recipients : [];
-    };
     
-    const toEmails = parseRecipients(draft.to_recipients).join(', ');
-    const ccEmails = parseRecipients(draft.cc_recipients).join(', ');
-    const bccEmails = parseRecipients(draft.bcc_recipients).join(', ');
-    
-    setTo(toEmails);
-    setCc(ccEmails);
-    setBcc(bccEmails);
-    setSubject(draft.subject || '');
-    setContent(draft.content || draft.body || '');
-    setPriority(draft.priority || 'normal');
-    setSelectedSignatureId(draft.signature_id || '');
-    setDraftId(draft.id);
-    setHasUnsavedChanges(false);
-    showSuccess('📝 Draft loaded successfully!');
-  };
-
-  // Attachment handlers
-  const handleFileUpload = (event) => {
-    const files = Array.from(event.target.files);
-    const MAX_ATTACHMENT_BYTES = 3 * 1024 * 1024; // ~3MB per Graph API request limit
-
-    const oversized = files.filter((f) => f.size > MAX_ATTACHMENT_BYTES);
-    const allowed = files.filter((f) => f.size <= MAX_ATTACHMENT_BYTES);
-
-    if (oversized.length > 0) {
-      showWarning(`Some files exceed 3MB and were skipped: ${oversized.map(f => f.name).join(', ')}`);
-    }
-
-    const newAttachments = allowed.map((file, index) => ({
-      id: Date.now() + index,
-      name: file.name,
-      size: file.size,
-      type: file.type,
-      file: file
-    }));
-    
-    if (newAttachments.length > 0) {
-      setAttachments(prev => [...prev, ...newAttachments]);
-      showSuccess(`📎 ${newAttachments.length} file(s) attached`);
+    switch (currentModalMode) {
+      case 'preview': return 'Send Email';
+      case 'edit': return 'Update Template';
+      case 'saveAs': 
+      case 'create': return 'Save Template';
+      default: return mode === 'send' ? 'Next: Preview Recipients' : 'Send Campaign';
     }
   };
 
-  const removeAttachment = (attachmentId) => {
-    setAttachments(prev => prev.filter(att => att.id !== attachmentId));
-    showInfo('📎 Attachment removed');
-  };
+  const filteredContacts = availableContacts.filter(contact => {
+    const searchLower = searchTerm.toLowerCase();
+    const name = String(contact.name || '').toLowerCase();
+    const email = String(contact.email || '').toLowerCase();
+    return name.includes(searchLower) || email.includes(searchLower);
+  });
 
-  const formatFileSize = (bytes) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
-  
-
-  const renderEmailField = (field, value, setter, placeholder, label) => {
-    const emailList = value ? value.split(',').map(e => e.trim()).filter(e => e) : [];
-    
-    return (
-      <div className="flex items-start space-x-3">
-        <label className="w-16 text-sm font-medium text-gray-700 mt-2">{label}:</label>
-        <div className="flex-1 space-y-3">
-          {/* Email Input Field */}
-          <input
-            type="text"
-            value={value}
-            onChange={(e) => setter(e.target.value)}
-            placeholder={placeholder}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-          />
-          
-          {/* User Selection Dropdown */}
-          <div className="flex items-center space-x-3">
-            <select
-              onChange={(e) => handleUserDropdownChange(field, e)}
-              className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors min-w-[200px]"
-              disabled={usersLoading}
-            >
-              <option value="">👥 Select user to add...</option>
-              {users.map(user => {
-               
-                return (
-                  <option key={user.id} value={user.id}>
-                    {user.outlook_email || user.email || 'No email available'}
-                  </option>
-                );
-              })}
-            </select>
-            
-            {usersLoading && (
-              <span className="text-sm text-gray-500">Loading users...</span>
-            )}
-          </div>
-
-          {/* Selected Emails Display */}
-          {emailList.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {emailList.map((email, index) => (
-                <span
-                  key={index}
-                  className="inline-flex items-center bg-blue-100 text-blue-800 text-sm px-3 py-1 rounded-full border border-blue-200"
-                >
-                  <span className="mr-2">📧</span>
-                  {email}
-                  <button
-                    onClick={() => removeEmail(field, email)}
-                    className="ml-2 text-blue-600 hover:text-red-600 transition-colors p-1 rounded-full hover:bg-blue-200"
-                    title="Remove email"
-                  >
-                    <FiX className="w-3 h-3" />
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
+  if (!isOpen) return null;
 
   return (
-    <>
-      <Dialog open={isOpen} onClose={onClose} className="fixed inset-0 z-50 overflow-y-auto">
-        <div className="flex min-h-screen items-start justify-center p-2 sm:p-4 pt-4">
-          <Dialog.Overlay className="fixed inset-0 bg-black opacity-30" />
+    <Dialog open={isOpen} onClose={onClose} className="fixed inset-0 z-50 overflow-y-auto">
+      <div className="flex min-h-screen items-center justify-center p-4">
+        <Dialog.Overlay className="fixed inset-0 bg-black bg-opacity-50" />
 
-          <div className="relative bg-white w-full mx-2 sm:mx-4 rounded-lg shadow-2xl max-h-[95vh] overflow-hidden max-w-full sm:max-w-2xl md:max-w-3xl lg:max-w-4xl">
-            {/* Header */}
-            <div className="bg-white border-b border-gray-200 p-4 flex justify-between items-center">
-              <h2 className="text-xl font-semibold">New Message</h2>
-              <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-                <FiX className="h-6 w-6" />
+        <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-7xl max-h-[95vh] overflow-hidden">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white p-6 flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
+                <FiMail className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold">{getModalTitle()}</h2>
+                <p className="text-blue-100 text-sm">
+                  {currentModalMode === 'preview' ? 'Preview and customize your email template' :
+                    currentModalMode === 'send' ? 'Compose and send your email campaign' :
+                      currentModalMode === 'edit' ? 'Edit your email template' :
+                        'Create a new email template'}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-4">
+              {(currentModalMode === 'preview' || currentModalMode === 'edit') && (
+                <button onClick={() => setCurrentModalMode('saveAs')} className="flex items-center px-4 py-2 bg-white bg-opacity-20 rounded-lg hover:bg-opacity-30 transition-colors">
+                  <FiSave className="mr-2 w-4 h-4" />
+                  <span className="text-sm">Save As</span>
+                </button>
+              )}
+              {(currentModalMode === 'send' || currentModalMode === 'preview') && (
+                <button
+                  onClick={() => showInfo('📧 AI assistant feature coming soon!')}
+                  className="flex items-center px-4 py-2 bg-white bg-opacity-20 rounded-lg hover:bg-opacity-30 transition-colors"
+                >
+                  <span className="mr-2">🤖</span>
+                  <span className="text-sm">Write email with our AI assistant</span>
+                </button>
+              )}
+              {currentModalMode === 'preview' && (
+                <button
+                  onClick={() => setCurrentModalMode('edit')}
+                  className="flex items-center px-4 py-2 bg-white bg-opacity-20 rounded-lg hover:bg-opacity-30 transition-colors"
+                >
+                  <FiEdit2 className="mr-2 w-4 h-4" />
+                  <span className="text-sm">Edit</span>
+                </button>
+              )}
+              <button
+                onClick={onClose}
+                className="text-white hover:text-gray-200 transition-colors"
+              >
+                <FiX className="w-6 h-6" />
               </button>
             </div>
+          </div>
 
-            <div className="flex flex-col h-full max-h-[calc(95vh-80px)]">
-              <div className="flex-1 overflow-y-auto">
-                {/* Fields */}
-                <div className="p-4 space-y-3 border-b border-gray-200">
-                <div className="flex items-center">
-                  <label className="w-16 text-sm font-medium">From:</label>
-                  <input value={sendFrom} readOnly className="flex-1 border-none text-sm bg-transparent" />
-                </div>
-
-                {renderEmailField('to', to, setTo, 'Enter multiple emails separated by commas', 'To')}
-
-                <div className="flex items-center space-x-2">
-                  <button 
-                    onClick={() => setShowCc(!showCc)} 
-                    className={`text-xs px-3 py-1 rounded-lg transition-colors ${
-                      showCc 
-                        ? 'bg-blue-100 text-blue-700 border border-blue-200' 
-                        : 'text-blue-600 hover:bg-blue-50 border border-transparent'
-                    }`}
-                  >
-                    Cc
-                  </button>
-                  <button 
-                    onClick={() => setShowBcc(!showBcc)} 
-                    className={`text-xs px-3 py-1 rounded-lg transition-colors ${
-                      showBcc 
-                        ? 'bg-blue-100 text-blue-700 border border-blue-200' 
-                        : 'text-blue-600 hover:bg-blue-50 border border-transparent'
-                    }`}
-                  >
-                    Bcc
-                  </button>
-                </div>
-
-                {showCc && renderEmailField('cc', cc, setCc, 'Enter multiple emails separated by commas', 'Cc')}
-                {showBcc && renderEmailField('bcc', bcc, setBcc, 'Enter multiple emails separated by commas', 'Bcc')}
-
-                <div className="flex items-center">
-                  <label className="w-16 text-sm font-medium">Subject:</label>
-                  <input
-                    type="text"
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                    placeholder="Enter subject"
-                    className="flex-1 border-none text-sm bg-transparent font-medium"
-                  />
-                  <div className="flex items-center space-x-2 ml-2">
-                    <select
-                      value={priority}
-                      onChange={(e) => setPriority(e.target.value)}
-                      className="text-xs border border-gray-300 rounded px-2 py-1"
-                    >
-                      <option value="low">Low Priority</option>
-                      <option value="normal">Normal</option>
-                      <option value="high">High Priority</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Signature Dropdown */}
-                <div className="flex items-center">
-                  <label className="w-16 text-sm font-medium">Signature:</label>
-                  <div className="flex-1 flex items-center space-x-3">
-                    <select
-                      value={selectedSignatureId}
-                      onChange={(e) => handleSignatureSelect(e.target.value)}
-                      className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors min-w-[200px]"
-                      disabled={loading}
-                    >
-                      <option value="">📝 Select signature...</option>
-                      {signatures.map(signature => (
-                        <option key={signature.id} value={signature.id}>
-                          {signature.name}
-                        </option>
-                      ))}
-                    </select>
-                    {loading && (
-                      <span className="text-sm text-gray-500">Loading signatures...</span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Attachments Section */}
-                <div className="flex items-start">
-                  <label className="w-16 text-sm font-medium text-gray-700 mt-2">Attach:</label>
-                  <div className="flex-1 space-y-3">
-                    <div className="flex items-center space-x-3">
-                      <label className="cursor-pointer bg-blue-50 hover:bg-blue-100 text-blue-700 text-sm px-4 py-2 rounded-lg border border-blue-200 transition-colors">
-                        <FiPaperclip className="inline mr-2" />
-                        Choose Files
-                        <input
-                          type="file"
-                          multiple
-                          onChange={handleFileUpload}
-                          className="hidden"
-                        />
-                      </label>
-                      <span className="text-sm text-gray-500">
-                        Max file size per attachment: 3MB (Graph API inline)
+          <div className="flex h-[80vh]">
+            {/* Left Column - Email Composition */}
+            <div className="flex-1 p-6 overflow-y-auto">
+              <form onSubmit={handleSubmit} className="space-y-6">
+                {/* Send From Section */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Send from:
+                  </label>
+                  <div className="flex items-center p-3 bg-gray-50 rounded-lg border border-gray-200">
+                    <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center mr-3">
+                      <span className="text-white font-bold text-sm">
+                        {user?.first_name?.[0]}{user?.last_name?.[0]}
                       </span>
                     </div>
-                    
-                    {/* Attachments Display */}
-                    {attachments.length > 0 && (
-                      <div className="space-y-2">
-                        {attachments.map(attachment => (
-                          <div key={attachment.id} className="flex items-center justify-between bg-gray-50 p-3 rounded-lg border">
-                            <div className="flex items-center space-x-3">
-                              <FiPaperclip className="text-gray-500 w-4 h-4" />
-                              <div>
-                                <div className="text-sm font-medium">{attachment.name}</div>
-                                <div className="text-xs text-gray-500">{formatFileSize(attachment.size)}</div>
-                              </div>
+                    <div>
+                      <div className="font-medium text-gray-900">
+                        {user?.first_name && user?.last_name 
+                          ? `${user.first_name} ${user.last_name}` 
+                          : user?.email?.split('@')[0] || 'Team Member'}
+                      </div>
+                      <div className="text-sm text-gray-500">{user?.email}</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Template Title - Show for template operations */}
+                {(currentModalMode === 'edit' || currentModalMode === 'saveAs' || currentModalMode === 'create') && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Template Title *
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.title}
+                      onChange={(e) => handleInputChange('title', e.target.value)}
+                      className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                        errors.title ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                      placeholder="Enter template title..."
+                    />
+                    {errors.title && (
+                      <p className="mt-1 text-sm text-red-600">{errors.title}</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Template Category - Show for template operations */}
+                {(currentModalMode === 'edit' || currentModalMode === 'saveAs' || currentModalMode === 'create') && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Category
+                    </label>
+                    <select
+                      value={formData.category}
+                      onChange={(e) => handleInputChange('category', e.target.value)}
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="MY TEMPLATES">My Templates</option>
+                      <option value="KEEP-IN-TOUCH">Keep-in-Touch</option>
+                    </select>
+                  </div>
+                )}
+
+                {/* Subject */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Subject *
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.subject}
+                    onChange={(e) => handleInputChange('subject', e.target.value)}
+                    className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                      errors.subject ? 'border-red-500' : 'border-gray-300'
+                    }`}
+                    placeholder="Enter email subject..."
+                  />
+                  {errors.subject && (
+                    <p className="mt-1 text-sm text-red-600">{errors.subject}</p>
+                  )}
+                </div>
+
+                {/* Content */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Content *
+                  </label>
+                  <div className="border-2 border-gray-200 rounded-lg overflow-hidden focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500 focus-within:ring-opacity-20 transition-all duration-200">
+                    <ReactQuill
+                      value={formData.content}
+                      onChange={(value) => handleInputChange('content', value)}
+                      readOnly={currentModalMode === 'preview'}
+                      modules={modules}
+                      className="h-64"
+                      placeholder="Enter your email content here..."
+                    />
+                  </div>
+                  {errors.content && (
+                    <p className="mt-1 text-sm text-red-600">{errors.content}</p>
+                  )}
+                </div>
+
+                {/* Send Time - Only show for send mode */}
+                {currentModalMode === 'send' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Send Time
+                    </label>
+                    <div className="space-y-3">
+                      <label className="flex items-center">
+                        <input
+                          type="radio"
+                          name="sendTime"
+                          value="now"
+                          checked={formData.sendTime === 'now'}
+                          onChange={(e) => handleInputChange('sendTime', e.target.value)}
+                          className="mr-2 text-blue-600 focus:ring-blue-500"
+                        />
+                        Send Now
+                      </label>
+                      <label className="flex items-center">
+                        <input
+                          type="radio"
+                          name="sendTime"
+                          value="scheduled"
+                          checked={formData.sendTime === 'scheduled'}
+                          onChange={(e) => handleInputChange('sendTime', e.target.value)}
+                          className="mr-2 text-blue-600 focus:ring-blue-500"
+                        />
+                        Schedule for Later
+                      </label>
+                    </div>
+
+                    {formData.sendTime === 'scheduled' && (
+                      <div className="mt-3 grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Date
+                          </label>
+                          <input
+                            type="date"
+                            value={formData.scheduledDate}
+                            onChange={(e) => handleInputChange('scheduledDate', e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                          {errors.scheduledDate && (
+                            <p className="mt-1 text-sm text-red-600">{errors.scheduledDate}</p>
+                          )}
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Time
+                          </label>
+                          <input
+                            type="time"
+                            value={formData.scheduledTime}
+                            onChange={(e) => handleInputChange('scheduledTime', e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                          {errors.scheduledTime && (
+                            <p className="mt-1 text-sm text-red-600">{errors.scheduledTime}</p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+ 
+                {/* Action Buttons */}
+                <div className="flex justify-between items-center pt-6 border-t border-gray-200">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="px-6 py-3 text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isLoading}
+                    className={`px-6 py-3 font-bold rounded-xl shadow-lg transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center ${
+                      currentModalMode === 'send' 
+                        ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white hover:from-blue-600 hover:to-purple-700'
+                        : 'bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:from-green-600 hover:to-emerald-700'
+                    }`}
+                  >
+                    {isLoading ? (
+                      <>
+                        <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
+                        {currentModalMode === 'edit' ? 'Updating...' : currentModalMode === 'send' ? 'Sending...' : 'Saving...'}
+                      </>
+                    ) : (
+                      <>
+                        {currentModalMode === 'send' ? <FiEye className="mr-2" /> : <FiSettings className="mr-2" />}
+                        {getSubmitButtonText()}
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* Right Column - Recipients Selection (Only for send mode) */}
+            {currentModalMode === 'send' && (
+              <div className="w-96 bg-gray-50 border-l border-gray-200 p-6 overflow-y-auto">
+                <div className="space-y-6">
+                  {/* Header */}
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold text-gray-900">Select Recipients to Send:</h3>
+                    <button
+                      onClick={() => showInfo('📧 Send test functionality coming soon!')}
+                      className="flex items-center px-3 py-1 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors text-sm"
+                    >
+                      <FiSend className="mr-1 w-3 h-3" />
+                      Send a Test
+                    </button>
+                  </div>
+
+                  {/* Search Recipients */}
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <FiSearch className="text-gray-400 w-4 h-4" />
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Search tags or contacts"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-10 w-full rounded-lg border-2 border-gray-200 shadow-sm focus:border-blue-500 focus:ring-blue-500 focus:ring-2 transition-all p-3"
+                    />
+                  </div>
+
+                  {/* Popular Tags */}
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-900 mb-3">Popular Tags</h4>
+                    <div className="space-y-2">
+                      {popularTags.map(tag => (
+                        <label
+                          key={tag.id}
+                          className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200 hover:bg-blue-50 hover:border-blue-300 cursor-pointer transition-all"
+                        >
+                          <div className="flex items-center space-x-3">
+                            <input
+                              type="checkbox"
+                              checked={selectedTags.find(t => t.id === tag.id) !== undefined}
+                              onChange={() => handleTagToggle(tag)}
+                              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <div>
+                              <span className="text-sm font-medium text-gray-900">{tag.label}</span>
+                              <div className="text-xs text-gray-500">{tag.count} contacts</div>
+                            </div>
+                          </div>
+                          <FiTag className="w-4 h-4 text-gray-400" />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Selected Recipients */}
+                  {(formData.recipients.length > 0 || selectedTags.length > 0) && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-900 mb-3">
+                        Selected ({formData.recipients.length + selectedTags.length})
+                      </h4>
+                      <div className="space-y-2 max-h-32 overflow-y-auto">
+                        {selectedTags.map(tag => (
+                          <div key={tag.id} className="flex items-center justify-between bg-blue-50 p-2 rounded-lg">
+                            <div className="flex items-center space-x-2">
+                              <FiTag className="w-3 h-3 text-blue-600" />
+                              <span className="text-sm text-blue-800 font-medium">{tag.label}</span>
+                              <span className="text-xs text-blue-600">({tag.count})</span>
                             </div>
                             <button
-                              onClick={() => removeAttachment(attachment.id)}
-                              className="text-red-500 hover:text-red-700 p-2 rounded-full hover:bg-red-50 transition-colors"
-                              title="Remove attachment"
+                              onClick={() => handleTagToggle(tag)}
+                              className="text-red-500 hover:text-red-700 p-1 rounded-full hover:bg-red-100 transition-colors"
                             >
-                              <FiTrash2 className="w-4 h-4" />
+                              <FiX className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                        {formData.recipients.map(recipient => (
+                          <div key={recipient.id} className="flex items-center justify-between bg-green-50 p-2 rounded-lg">
+                            <div className="flex items-center space-x-2">
+                              <FiUser className="w-3 h-3 text-green-600" />
+                              <span className="text-sm text-green-800 font-medium">{recipient.name}</span>
+                            </div>
+                            <button
+                              onClick={() => setFormData(prev => ({
+                                ...prev,
+                                recipients: prev.recipients.filter(r => r.id !== recipient.id)
+                              }))}
+                              className="text-red-500 hover:text-red-700 p-1 rounded-full hover:bg-red-100 transition-colors"
+                            >
+                              <FiX className="w-3 h-3" />
                             </button>
                           </div>
                         ))}
                       </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Editor */}
-                <div className="flex flex-col">
-                  <ReactQuill
-                    value={content}
-                    onChange={setContent}
-                    modules={modules}
-                    formats={formats}
-                    className="min-h-[200px]"
-                    placeholder="Type your message here..."
-                  />
-                </div>
-              </div>
-            </div>
-
-              {/* Actions */}
-              <div className="bg-gray-50 p-4 flex justify-between">
-                <div className="flex space-x-2">
-                  <button onClick={() => setIsPreviewModalOpen(true)} className="text-sm text-gray-600 hover:text-gray-800 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors">
-                    <FiEye className="inline mr-1" /> Preview
-                  </button>
-                  <button 
-                    onClick={() => handleSaveDraft(true)} 
-                    disabled={saving || (!to.trim() && !subject.trim() && !content.trim())}
-                    className="text-sm text-gray-600 hover:text-gray-800 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-                    title="Save as draft"
-                  >
-                    {saving ? (
-                      <>
-                        <svg className="animate-spin -ml-1 mr-1 h-3 w-3 text-gray-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Saving...
-                      </>
-                    ) : (
-                      <>
-                        <FiSave className="inline mr-1" /> Save Draft
-                      </>
-                    )}
-                  </button>
-                  <button 
-                    onClick={clearAllStates} 
-                    className="text-sm text-gray-600 hover:text-gray-800 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors"
-                    title="Clear all fields"
-                  >
-                    <FiSettings className="inline mr-1" /> Clear
-                  </button>
-                </div>
-                
-                {/* Draft Status */}
-                <div className="flex items-center space-x-3 text-xs text-gray-500">
-                  {lastSaved && (
-                    <span>Last saved: {lastSaved.toLocaleTimeString()}</span>
-                  )}
-                  {hasUnsavedChanges && (
-                    <span className="text-orange-500">• Unsaved changes</span>
-                  )}
-                  {draftId && (
-                    <span className="text-blue-500">• Draft #{draftId.slice(-6)}</span>
-                  )}
-                </div>
-                <button
-                  onClick={handleSendEmail}
-                  disabled={!to.trim() || !subject.trim() || !content.trim() || sending}
-                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-                >
-                  {sending ? (
-                    <>
-                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Sending...
-                    </>
-                  ) : (
-                    <>
-                      <FiSend className="inline mr-1" /> Send
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Dialog>
-
-      {/* Preview Modal */}
-      <Dialog
-        open={isPreviewModalOpen}
-        onClose={() => setIsPreviewModalOpen(false)}
-        className="fixed inset-0 z-[60] overflow-y-auto"
-      >
-        <div className="flex min-h-screen items-center justify-center p-4">
-          <Dialog.Overlay className="fixed inset-0 bg-black opacity-30" />
-
-          <div className="relative bg-white w-full max-w-2xl mx-4 rounded-lg shadow-2xl">
-            <div className="bg-blue-600 p-4 rounded-t-lg">
-              <div className="flex justify-between items-center">
-                <div>
-                  <h3 className="text-lg font-semibold text-white">📧 Email Preview</h3>
-                  <p className="text-blue-100 text-sm">Preview how your email will appear</p>
-                </div>
-                <button
-                  onClick={() => setIsPreviewModalOpen(false)}
-                  className="text-white hover:text-gray-200 transition-colors"
-                >
-                  <FiX className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-            
-            <div className="p-6">
-              <div className="border border-gray-300 rounded-lg overflow-hidden">
-                {/* Email Header */}
-                <div className="bg-gray-50 p-4 border-b border-gray-300">
-                  <div className="space-y-2 text-sm">
-                    <div><strong>From:</strong> {sendFrom}</div>
-                    <div><strong>To:</strong> {to}</div>
-                    {cc && <div><strong>Cc:</strong> {cc}</div>}
-                    {bcc && <div><strong>Bcc:</strong> {bcc}</div>}
-                    <div><strong>Subject:</strong> {subject}</div>
-                    {priority !== 'normal' && (
-                      <div><strong>Priority:</strong> <span className={priority === 'high' ? 'text-red-600' : 'text-blue-600'}>{priority.toUpperCase()}</span></div>
-                    )}
-                  </div>
-                </div>
-
-                                  {/* Attachments */}
-                  {attachments.length > 0 && (
-                    <div className="bg-gray-50 p-4 border-b border-gray-300">
-                      <div className="text-sm font-medium text-gray-700 mb-2">Attachments:</div>
-                      {attachments.map(attachment => (
-                        <div key={attachment.id} className="flex items-center text-sm text-gray-600">
-                          <FiPaperclip className="mr-2 w-4 h-4" />
-                          {attachment.name} ({formatFileSize(attachment.size)})
-                        </div>
-                      ))}
                     </div>
                   )}
 
-                  {/* Email Body */}
-                  <div className="p-4 bg-white">
-                    <div 
-                      className="prose prose-sm max-w-none"
-                      dangerouslySetInnerHTML={{ __html: content }}
-                    />
+                  {/* Contacts Section */}
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-900 mb-3">Contacts</h4>
+                    <div className="bg-white rounded-lg border border-gray-200 p-4 text-center">
+                      <FiUsers className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                      <p className="text-sm text-gray-600 mb-2">
+                        You can use the search to add individual contacts to your campaign.
+                      </p>
+                      {contactsLoading ? (
+                        <div className="text-xs text-blue-600">Loading contacts...</div>
+                      ) : (
+                        <div className="text-xs text-gray-500">
+                          {availableContacts.length} contacts available
+                        </div>
+                      )}
+                    </div>
                   </div>
+
+                  {errors.recipients && (
+                    <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+                      {errors.recipients}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-            
-            <div className="bg-gray-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg">
-              <button
-                onClick={() => setIsPreviewModalOpen(false)}
-                className="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium transition-colors"
-              >
-                Close Preview
-              </button>
-              <button
-                onClick={() => {
-                  setIsPreviewModalOpen(false);
-                  handleSendEmail();
-                }}
-                disabled={sending}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-              >
-                {sending ? (
-                  <>
-                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Sending...
-                  </>
-                ) : (
-                  <>
-                    <FiSend className="inline mr-2 w-4 h-4" />
-                    Send Email
-                  </>
-                )}
-              </button>
-            </div>
+            )}
           </div>
         </div>
-      </Dialog>
-
-      <TemplateSelectModal
-        isOpen={isTemplateSelectModalOpen}
-        onClose={() => setIsTemplateSelectModalOpen(false)}
-        onSelect={handleTemplateSelect}
-      />
-    </>
+      </div>
+    </Dialog>
   );
 }
 

@@ -1,28 +1,78 @@
 import React, { useState } from 'react';
-import Draggable from 'react-draggable';
-import { FiX, FiPaperclip, FiUser, FiClock } from 'react-icons/fi';
-import { format } from 'date-fns';
+import { FiX, FiEdit2, FiMove } from 'react-icons/fi';
 import { updateNote, deleteNote } from '../../services/api';
 
 function StickyNote({ note, onUpdate, onDelete }) {
-  const [position, setPosition] = useState({ x: note.x_position || 100, y: note.y_position || 100 });
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedContent, setEditedContent] = useState(note.content || '');
+  const [position, setPosition] = useState({
+    x: note.x_position || 100,
+    y: note.y_position || 100
+  });
   const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
-  const handleDragStop = async (e, data) => {
-    const newPosition = { x: Math.round(data.x), y: Math.round(data.y) };
-    setPosition(newPosition);
+  const handleMouseDown = (e) => {
+    if (isEditing) return;
+    setIsDragging(true);
+    setDragStart({
+      x: e.clientX - position.x,
+      y: e.clientY - position.y
+    });
+  };
+
+  const handleMouseMove = (e) => {
+    if (!isDragging || isEditing) return;
+    
+    const newPosition = {
+      x: e.clientX - dragStart.x,
+      y: e.clientY - dragStart.y
+    };
+    
+    // Keep within viewport bounds
+    const maxX = window.innerWidth - 250;
+    const maxY = window.innerHeight - 200;
+    
+    setPosition({
+      x: Math.max(0, Math.min(newPosition.x, maxX)),
+      y: Math.max(0, Math.min(newPosition.y, maxY))
+    });
+  };
+
+  const handleMouseUp = async () => {
+    if (!isDragging) return;
     setIsDragging(false);
     
+    // Save position to database
     try {
       await updateNote(note.id, {
-        x_position: Math.round(data.x),
-        y_position: Math.round(data.y)
+        x_position: position.x,
+        y_position: position.y
       });
-      if (onUpdate) {
-        onUpdate(note.id, newPosition);
-      }
+      if (onUpdate) onUpdate();
     } catch (error) {
       console.error('Error updating note position:', error);
+    }
+  };
+
+  React.useEffect(() => {
+    if (isDragging) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [isDragging, dragStart]);
+
+  const handleSave = async () => {
+    try {
+      await updateNote(note.id, { content: editedContent });
+      setIsEditing(false);
+      if (onUpdate) onUpdate();
+    } catch (error) {
+      console.error('Error updating note:', error);
     }
   };
 
@@ -30,95 +80,109 @@ function StickyNote({ note, onUpdate, onDelete }) {
     if (window.confirm('Are you sure you want to delete this sticky note?')) {
       try {
         await deleteNote(note.id);
-        if (onDelete) {
-          onDelete(note.id);
-        }
+        if (onDelete) onDelete(note.id);
       } catch (error) {
         console.error('Error deleting note:', error);
       }
     }
   };
 
-  const handleFileClick = () => {
-    if (note.media_url) {
-      window.open(note.media_url, '_blank');
-    }
-  };
-
-  const getContactName = () => {
-    if (note.contacts) {
-      return `${note.contacts.first_name} ${note.contacts.last_name}`;
-    }
-    return null;
+  const handleCancel = () => {
+    setEditedContent(note.content || '');
+    setIsEditing(false);
   };
 
   return (
-    <Draggable
-      position={position}
-      onStart={() => setIsDragging(true)}
-      onStop={handleDragStop}
-      bounds="parent"
-      handle=".drag-handle"
+    <div
+      className={`fixed bg-yellow-200 border-2 border-yellow-300 rounded-lg shadow-lg p-4 w-64 min-h-48 z-30 ${
+        isDragging ? 'cursor-grabbing shadow-2xl' : 'cursor-grab'
+      } ${isEditing ? 'z-40' : ''}`}
+      style={{
+        left: `${position.x}px`,
+        top: `${position.y}px`,
+        transform: isDragging ? 'rotate(2deg)' : 'rotate(1deg)'
+      }}
+      onMouseDown={handleMouseDown}
     >
-      <div className={`absolute w-64 bg-yellow-100 border-l-4 border-yellow-400 rounded-lg shadow-lg transition-all duration-200 ${
-        isDragging ? 'shadow-2xl scale-105 z-50' : 'hover:shadow-xl z-40'
-      }`}>
-        {/* Header */}
-        <div className="drag-handle cursor-move bg-yellow-200 px-4 py-2 rounded-t-lg flex justify-between items-center">
-          <div className="flex items-center space-x-2">
-            <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
-            <span className="text-xs font-medium text-yellow-800">Sticky Note</span>
-          </div>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center space-x-2">
+          <FiMove className="w-4 h-4 text-yellow-700" />
+          <span className="text-xs font-medium text-yellow-800">Sticky Note</span>
+        </div>
+        <div className="flex space-x-1">
           <button
-            onClick={handleDelete}
-            className="text-yellow-600 hover:text-red-600 transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsEditing(!isEditing);
+            }}
+            className="text-yellow-700 hover:text-yellow-900 p-1 rounded"
+            title="Edit"
           >
-            <FiX className="w-4 h-4" />
+            <FiEdit2 className="w-3 h-3" />
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDelete();
+            }}
+            className="text-red-600 hover:text-red-800 p-1 rounded"
+            title="Delete"
+          >
+            <FiX className="w-3 h-3" />
           </button>
         </div>
+      </div>
 
-        {/* Content */}
-        <div className="p-4">
-          <h4 className="font-semibold text-gray-900 mb-2 text-sm">{note.title}</h4>
-          
-          <div 
-            className="text-sm text-gray-700 mb-3 max-h-20 overflow-y-auto"
-            dangerouslySetInnerHTML={{ 
-              __html: note.content?.length > 100 
-                ? `${note.content.slice(0, 100)}...` 
-                : note.content 
-            }}
-          />
-
-          {/* Contact Reference */}
-          {getContactName() && (
-            <div className="flex items-center text-xs text-blue-600 mb-2">
-              <FiUser className="w-3 h-3 mr-1" />
-              <span>{getContactName()}</span>
-            </div>
-          )}
-
-          {/* File Attachment */}
-          {note.media_url && (
-            <div className="mb-2">
+      {/* Content */}
+      <div className="flex-1">
+        {note.title && (
+          <h4 className="font-semibold text-yellow-900 mb-2 text-sm">
+            {note.title}
+          </h4>
+        )}
+        
+        {isEditing ? (
+          <div className="space-y-3">
+            <textarea
+              value={editedContent}
+              onChange={(e) => setEditedContent(e.target.value)}
+              className="w-full h-24 p-2 text-sm bg-yellow-100 border border-yellow-300 rounded resize-none focus:outline-none focus:ring-2 focus:ring-yellow-500"
+              placeholder="Enter your note..."
+              autoFocus
+            />
+            <div className="flex space-x-2">
               <button
-                onClick={handleFileClick}
-                className="flex items-center text-xs text-blue-600 hover:text-blue-800 transition-colors"
+                onClick={handleSave}
+                className="px-3 py-1 bg-green-500 text-white rounded text-xs hover:bg-green-600"
               >
-                <FiPaperclip className="w-3 h-3 mr-1" />
-                <span>View attachment</span>
+                Save
+              </button>
+              <button
+                onClick={handleCancel}
+                className="px-3 py-1 bg-gray-500 text-white rounded text-xs hover:bg-gray-600"
+              >
+                Cancel
               </button>
             </div>
-          )}
+          </div>
+        ) : (
+          <div 
+            className="text-sm text-yellow-900 leading-relaxed"
+            dangerouslySetInnerHTML={{ __html: note.content }}
+          />
+        )}
+      </div>
 
-          {/* Timestamp */}
-          <div className="flex items-center text-xs text-gray-500">
-            <FiClock className="w-3 h-3 mr-1" />
-            <span>{format(new Date(note.created_at), 'MMM d, h:mm a')}</span>
+      {/* Contact reference */}
+      {note.contacts && (
+        <div className="mt-3 pt-2 border-t border-yellow-300">
+          <div className="text-xs text-yellow-700">
+            📝 About: {note.contacts.first_name} {note.contacts.last_name}
           </div>
         </div>
-      </div>
-    </Draggable>
+      )}
+    </div>
   );
 }
 

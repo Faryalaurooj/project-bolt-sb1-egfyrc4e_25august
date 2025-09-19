@@ -21,7 +21,7 @@ function ContactSelectModal({ isOpen, onClose, onContactSelect, multiSelect = fa
       setLoading(true);
       setError(null);
       console.log('👥 ContactSelectModal: Starting to fetch all recipients...');
-      // Fetch both contacts and users
+      console.log('👥 ContactSelectModal: Fetching contacts and users...');
       const data = await searchContactsAndUsers('');
       console.log('👥 ContactSelectModal: Search results:', data?.length || 0);
       setAllRecipients(data || []);

@@ -108,7 +108,12 @@ function AddActionItemModal({ isOpen, onClose, contact, onActionItemSaved, isEdi
   };
 
   const handleContactSelect = (contact) => {
+    console.log('📝 AddActionItemModal: Contact selected:', contact);
+    setIsContactSelectOpen(false);
+    setTimeout(() => {
+      console.log('📝 AddActionItemModal: Setting selected contact:', contact);
     setSelectedContact(contact);
+    }, 100);
   };
 
   return (

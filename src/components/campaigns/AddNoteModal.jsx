@@ -125,14 +125,11 @@ function AddNoteModal({ isOpen, onClose, contact, onNoteSaved, isEditMode = fals
 
   const handleContactSelect = (contact) => {
     console.log('📝 AddNoteModal: Contact selected, closing contact modal first...');
-    // Close contact modal first to prevent interference
     setIsContactSelectOpen(false);
-    
-    // Use setTimeout to ensure contact modal closes before updating state
     setTimeout(() => {
       console.log('📝 AddNoteModal: Setting selected contact:', contact);
       setSelectedContact(contact);
-    }, 0);
+    }, 100);
   };
 
   const handleInsertLink = () => {

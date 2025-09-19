@@ -1,10 +1,10 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
   FiHome, FiUsers, FiMail, FiCalendar, FiMessageSquare, FiClipboard,
-  FiActivity, FiSettings, FiPieChart, FiDollarSign, FiCheckSquare,
-  FiEdit2, FiUser, FiPhone, FiChevronLeft, FiChevronRight,
-  FiChevronDown, FiChevronUp, FiSliders, FiFileText, FiPaperclip
+  FiActivity, FiSettings, FiDollarSign, FiCheckSquare,
+  FiEdit2, FiPhone, FiChevronLeft, FiChevronRight,
+  FiChevronDown, FiChevronUp, FiSliders, FiPieChart, FiRefreshCw
 } from 'react-icons/fi';
 
 import EmailCampaignModal from '../components/campaigns/EmailCampaignModal';
@@ -18,16 +18,19 @@ import AddTaskModal from '../components/contacts/AddTaskModal';
 import CustomizationSettingsModal from '../components/common/CustomizationSettingsModal';
 import UserProfileModal from '../components/common/UserProfileModal';
 import MakeCallModal from '../components/calls/MakeCallModal';
+import ChatWindow from '../components/chat/ChatWindow';
+import UserSelectModal from '../components/users/UserSelectModal';
 import { useCustomization } from '../context/CustomizationContext';
 
 const DashboardLayout = () => {
   const location = useLocation();
   const { settings } = useCustomization();
 
+  // Sidebar & FAB
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(true);
   const [isFabExpanded, setIsFabExpanded] = useState(false);
-  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
+  // Modals
   const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
   const [isSocialModalOpen, setIsSocialModalOpen] = useState(false);
   const [isTextModalOpen, setIsTextModalOpen] = useState(false);
@@ -39,36 +42,65 @@ const DashboardLayout = () => {
   const [isCustomizationModalOpen, setIsCustomizationModalOpen] = useState(false);
   const [isUserProfileModalOpen, setIsUserProfileModalOpen] = useState(false);
   const [isMakeCallModalOpen, setIsMakeCallModalOpen] = useState(false);
+  const [isUserSelectModalOpen, setIsUserSelectModalOpen] = useState(false);
 
-
-  const openEmailCampaignModal = () => {
-    console.log('📧 DashboardLayout: Opening email campaign modal...');
-    setIsEmailModalOpen(true);
-  };
-
-  const openTextCampaignModal = () => {
-    console.log('📱 DashboardLayout: Opening text campaign modal...');
-    setIsTextModalOpen(true);
-  };
-
-  const openAddNoteModal = () => {
-    console.log('🔍 Opening add note modal...');
-    setIsAddNoteModalOpen(true);
-  };
-
-  const openAddTaskModal = () => {
-    console.log('📋 DashboardLayout: Opening add task modal...');
-    setIsAddTaskModalOpen(true);
-  };
-
-  const openMakeCallModal = () => {
-    console.log('📞 DashboardLayout: Opening make call modal...');
-    setIsMakeCallModalOpen(true);
-  };
-  const [openAutomations, setOpenAutomations] = useState(false);
-  const [openReporting, setOpenReporting] = useState(false);
-
+  // Chat windows management
+  const [chatWindows, setChatWindows] = useState([]);
+  
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
   const triggerRefresh = () => setRefreshTrigger(prev => prev + 1);
+
+  // Automations dropdown
+  const [openAutomations, setOpenAutomations] = useState(false);
+
+  // Sidebar nav items
+  const navItems = [
+    { path: '/', icon: FiHome, label: 'Dashboard' },
+    { path: '/taskboards', icon: FiCheckSquare, label: 'Task Boards' },
+    { path: '/pipeline', icon: FiDollarSign, label: 'Sales Pipeline' },
+    { path: '/contacts', icon: FiUsers, label: 'Contacts' },
+    { path: '/documents', icon: FiClipboard, label: 'Documents' },
+    { path: '/texting', icon: FiMessageSquare, label: 'Texting' },
+    { path: '/notes', icon: FiActivity, label: 'Notes & Actions' },
+    { path: '/downloads', icon: FiPieChart, label: 'Downloads' },
+    { path: '/internal-chat', icon: FiUsers, label: 'Team Messages' },
+    { path: '/settings', icon: FiSettings, label: 'Settings' },
+    ];
+
+  const openAddNoteModal = () => setIsAddNoteModalOpen(true);
+  const openAddTaskModal = () => setIsAddTaskModalOpen(true);
+  const openEmailCampaignModal = () => setIsEmailModalOpen(true);
+  const openTextCampaignModal = () => setIsTextModalOpen(true);
+  const openMakeCallModal = () => setIsMakeCallModalOpen(true);
+  const openSendTeamMessageModal = () => setIsUserSelectModalOpen(true);
+
+  // Chat window management functions
+  const openChatWithUser = (user) => {
+    setChatWindows(prev => {
+      // Check if chat window already exists
+      const existingIndex = prev.findIndex(chat => chat.user.id === user.id);
+      if (existingIndex !== -1) {
+        // If exists, maximize it
+        return prev.map((chat, index) => 
+          index === existingIndex ? { ...chat, minimized: false } : chat
+        );
+      }
+      // Add new chat window
+      return [...prev, { user, minimized: false }];
+    });
+  };
+
+  const toggleChatWindow = (userId) => {
+    setChatWindows(prev => 
+      prev.map(chat => 
+        chat.user.id === userId ? { ...chat, minimized: !chat.minimized } : chat
+      )
+    );
+  };
+
+  const closeChatWindow = (userId) => {
+    setChatWindows(prev => prev.filter(chat => chat.user.id !== userId));
+  };
 
   const isActive = useCallback(
     (path) =>
@@ -78,19 +110,10 @@ const DashboardLayout = () => {
     [location.pathname]
   );
 
-  const navItems = [
-    { path: '/', icon: FiHome, label: 'Dashboard' },
-    { path: '/taskboards', icon: FiCheckSquare, label: 'Task Boards' },
-    { path: '/pipeline', icon: FiDollarSign, label: 'Sales Pipeline' },
-    { path: '/contacts', icon: FiUsers, label: 'Contacts' },
-  
-    { path: '/attachments', icon: FiPaperclip, label: 'Attachments' },
-    { path: '/texting', icon: FiMessageSquare, label: 'Texting' },
-    { path: '/notes', icon: FiActivity, label: 'Notes & Actions' },
-  ];
-
   return (
     <div className="min-h-screen flex bg-gradient-to-br from-lime-100 via-white to-green-100 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
+      
+      {/* Sidebar */}
       <aside className={`${isSidebarExpanded ? 'w-64' : 'w-20'} transition-all duration-300 ease-in-out relative text-green-950 dark:text-green-100 bg-gradient-to-br from-green-400 to-lime-400 dark:from-gray-800 dark:to-gray-700`}>
         <button
           onClick={() => setIsSidebarExpanded(!isSidebarExpanded)}
@@ -99,47 +122,40 @@ const DashboardLayout = () => {
           {isSidebarExpanded ? <FiChevronLeft className="w-4 h-4 text-lime-800 dark:text-lime-400" /> : <FiChevronRight className="w-4 h-4 text-lime-800 dark:text-lime-400" />}
         </button>
 
- <div className="p-4 border-b border-green-300 dark:border-gray-600">
-  <button
-    onClick={() => setIsUserProfileModalOpen(true)}
-    className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
-  >
-    Edit Profile
-  </button>
+        <div className="p-4 border-b border-green-300 dark:border-gray-600">
+          <button onClick={() => setIsUserProfileModalOpen(true)} className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors">
+            Edit Profile
+          </button>
 
-  <button
-    onClick={() => setIsCustomizationModalOpen(true)}
-    className="flex items-center w-full px-2 py-2 text-green-950 dark:text-green-100 hover:bg-gradient-to-r hover:from-green-200 hover:to-yellow-100 rounded-md transition-colors"
-  >
-    <FiSliders className="w-5 h-5" />
-    {isSidebarExpanded && <span className="ml-3">Customize</span>}
-  </button>
-</div>
+          <button
+            onClick={() => setIsCustomizationModalOpen(true)}
+            className="flex items-center w-full px-2 py-2 text-green-950 dark:text-green-100 hover:bg-gradient-to-r hover:from-green-200 hover:to-yellow-100 rounded-md transition-colors mt-2"
+          >
+            <FiSliders className="w-5 h-5" />
+            {isSidebarExpanded && <span className="ml-3">Customize</span>}
+          </button>
+        </div>
 
-<nav className="mt-4">
-  {navItems.map(({ path, icon: Icon, label }) => (
-    <Link
-      key={path}
-      to={path}
-      className={`flex items-center px-4 py-2 mb-1 w-full rounded transition-colors ${isActive(path)}`}
-    >
-      <Icon className="w-6 h-6" />
-      {isSidebarExpanded && <span className="ml-3">{label}</span>}
-    </Link>
-  ))}
+        <nav className="mt-4">
+          {navItems.map(({ path, icon: Icon, label }) => (
+            <Link key={path} to={path} className={`flex items-center px-4 py-2 mb-1 w-full rounded transition-colors ${isActive(path)}`}>
+              <Icon className="w-6 h-6" />
+              {isSidebarExpanded && <span className="ml-3">{label}</span>}
+            </Link>
+          ))}
 
-
-
-   <div
-     className="px-4 py-2 mb-1 flex items-center justify-between cursor-pointer hover:bg-gradient-to-r hover:from-green-200 hover:to-yellow-100 rounded   transition-colors"
+          {/* Automations Dropdown */}
+          <div
+            className="px-4 py-2 mb-1 flex items-center justify-between cursor-pointer hover:bg-gradient-to-r hover:from-green-200 hover:to-yellow-100 rounded transition-colors"
             onClick={() => setOpenAutomations(!openAutomations)}
-   >
-  <div className="flex items-center">
-              <FiSettings className="w-6 h-6" />
+          >
+            <div className="flex items-center">
+              <FiRefreshCw className="w-6 h-6" />
               {isSidebarExpanded && <span className="ml-3">Automations</span>}
             </div>
             {isSidebarExpanded && (openAutomations ? <FiChevronUp className="w-4 h-4" /> : <FiChevronDown className="w-4 h-4" />)}
           </div>
+
           {isSidebarExpanded && openAutomations && (
             <div className="ml-10 text-sm">
               <Link to="/campaigns" className={`block px-2 py-1 rounded ${isActive('/campaigns')}`}>Campaigns</Link>
@@ -147,35 +163,21 @@ const DashboardLayout = () => {
               <Link to="/calendar" className={`block px-2 py-1 rounded ${isActive('/calendar')}`}>Calendar</Link>
             </div>
           )}
-
-          <div
-            className="px-4 py-2 mb-1 flex items-center justify-between cursor-pointer hover:bg-gradient-to-r hover:from-green-200 hover:to-yellow-100 rounded transition-colors"
-            onClick={() => setOpenReporting(!openReporting)}
-          >
-            <div className="flex items-center">
-              <FiPieChart className="w-6 h-6" />
-              {isSidebarExpanded && <span className="ml-3">Reporting</span>}
-            </div>
-            {isSidebarExpanded && (openReporting ? <FiChevronUp className="w-4 h-4" /> : <FiChevronDown className="w-4 h-4" />)}
-          </div>
-          {isSidebarExpanded && openReporting && (
-            <div className="ml-10 text-sm">
-              <Link to="/ivans-uploads" className={`block px-2 py-1 rounded ${isActive('/ivans-uploads')}`}>IVANS Uploads</Link>
-            </div>
-          )}
         </nav>
       </aside>
 
+      {/* Main Content */}
       <main className="flex-1 p-4 md:p-8 bg-gradient-to-tr from-[#F9FAF9] via-[#F5FFF9] to-white dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 relative overflow-hidden">
-
         <Outlet context={{
           openAddNoteModal,
           openAddTaskModal,
           openEmailCampaignModal,
           openTextCampaignModal,
-          openMakeCallModal
+          openMakeCallModal,
+          openSendTeamMessageModal
         }} />
 
+        {/* Floating Action Button (Quick Actions) */}
         <div className="fixed top-1/2 right-0 transform -translate-y-1/2 z-50">
           <button
             onClick={() => setIsFabExpanded(!isFabExpanded)}
@@ -196,6 +198,9 @@ const DashboardLayout = () => {
               <button onClick={() => { setIsTextModalOpen(true); setIsFabExpanded(false); }} className="flex items-center space-x-2 text-gray-800 hover:bg-green-200 hover:text-green-900 rounded w-full px-2 py-1">
                 <FiMessageSquare /><span>Compose Text</span>
               </button>
+              <button onClick={() => { setIsUserSelectModalOpen(true); setIsFabExpanded(false); }} className="flex items-center space-x-2 text-gray-800 hover:bg-green-200 hover:text-green-900 rounded w-full px-2 py-1">
+                <FiUsers /><span>Team Chat</span>
+              </button>
               <button onClick={() => { setIsAddPhoneCallModalOpen(true); setIsFabExpanded(false); }} className="flex items-center space-x-2 text-gray-800 hover:bg-green-200 hover:text-green-900 rounded w-full px-2 py-1">
                 <FiPhone /><span>Phone Call</span>
               </button>
@@ -206,6 +211,19 @@ const DashboardLayout = () => {
           )}
         </div>
 
+        {/* Chat Windows */}
+        {chatWindows.map((chat, index) => (
+          <ChatWindow
+            key={chat.user.id}
+            user={chat.user}
+            minimized={chat.minimized}
+            position={index}
+            onMinimize={() => toggleChatWindow(chat.user.id)}
+            onClose={() => closeChatWindow(chat.user.id)}
+          />
+        ))}
+
+        {/* Modals */}
         <EmailCampaignModal isOpen={isEmailModalOpen} onClose={() => setIsEmailModalOpen(false)} />
         <SocialMediaModal isOpen={isSocialModalOpen} onClose={() => setIsSocialModalOpen(false)} />
         <TextCampaignModal isOpen={isTextModalOpen} onClose={() => setIsTextModalOpen(false)} />
@@ -217,6 +235,12 @@ const DashboardLayout = () => {
         <CustomizationSettingsModal isOpen={isCustomizationModalOpen} onClose={() => setIsCustomizationModalOpen(false)} />
         <UserProfileModal isOpen={isUserProfileModalOpen} onClose={() => setIsUserProfileModalOpen(false)} />
         <MakeCallModal isOpen={isMakeCallModalOpen} onClose={() => setIsMakeCallModalOpen(false)} onCallSaved={triggerRefresh} />
+        <UserSelectModal 
+          isOpen={isUserSelectModalOpen} 
+          onClose={() => setIsUserSelectModalOpen(false)} 
+          onUserSelected={openChatWithUser}
+          placeholder="Search team members to chat with..."
+        />
       </main>
     </div>
   );

@@ -93,9 +93,9 @@ function Surveys() {
   };
 
   return (
-    <div className="space-y-8 bg-gradient-to-br from-slate-50 via-purple-50 to-pink-50 min-h-screen p-6">
+    <div className="space-y-8 bg-gradient-to-br from-slate-50 via-purple-50 to-lilac-50 min-h-screen p-6">
       {/* Enhanced Page Header */}
-      <div className="bg-gradient-to-r from-purple-600 via-pink-600 to-rose-600 p-8 rounded-3xl shadow-2xl border border-purple-300 relative overflow-hidden">
+      <div className="bg-gradient-to-r from-purple-300 via-lilac-600 to-lilac-600 p-8 rounded-3xl shadow-2xl border border-lilac-300 relative overflow-hidden">
         {/* Background decoration */}
         <div className="absolute top-0 right-0 w-64 h-64 bg-white bg-opacity-10 rounded-full -translate-y-32 translate-x-32"></div>
         <div className="absolute bottom-0 left-0 w-48 h-48 bg-white bg-opacity-5 rounded-full translate-y-24 -translate-x-24"></div>
@@ -197,7 +197,7 @@ function Surveys() {
             <p className="text-xl text-gray-600 mb-8 max-w-md mx-auto">Start gathering valuable feedback from your customers by creating your first survey</p>
             <button
               onClick={() => setShowForm(true)}
-              className="bg-gradient-to-r from-purple-500 via-pink-500 to-rose-500 hover:from-purple-600 hover:via-pink-600 hover:to-rose-600 text-white font-black py-4 px-10 rounded-2xl shadow-2xl transition-all duration-300 transform hover:scale-110 text-lg flex items-center mx-auto"
+              className="bg-gradient-to-r from-purple-300 via-pink-500 to-lilac-500 hover:from-purple-300 hover:via-lilac-600 hover:to-lilac-600 text-black font-black py-4 px-10 rounded-2xl shadow-2xl transition-all duration-300 transform hover:scale-110 text-lg flex items-center mx-auto"
             >
               <FiPlus className="mr-3 w-6 h-6" />
               Create Your First Survey

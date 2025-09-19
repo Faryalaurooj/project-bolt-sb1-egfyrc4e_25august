@@ -129,10 +129,11 @@ function NotesActions() {
         } else if (itemType === 'Phone Call') {
           await deletePhoneCall(itemId);
         }
+        showSuccess('Item deleted successfully!');
         triggerRefresh();
       } catch (err) {
         console.error('Error deleting item:', err);
-        alert('Failed to delete item. Please try again.');
+        showError('Failed to delete item. Please try again.');
       }
     }
   };

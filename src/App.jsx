@@ -9,16 +9,17 @@ import ContentCalendar from './pages/ContentCalendar';
 import Contacts from './pages/Contacts';
 import Surveys from './pages/Surveys';
 import Texting from './pages/Texting';
+import Documents from './pages/Documents';
 import NotesActions from './pages/NotesActions';
 import Automations from './pages/Automations';
-import Reporting from './pages/Reporting';
 import PageNotFound from './pages/PageNotFound';
 import PipelineBoard from './components/pipeline/PipelineBoard';
-import IvansUploadsPage from './pages/IvansUploadsPage';
-
-import Attachments from './pages/Attachments';
 import LoginForm from './components/auth/LoginForm';
 import RegisterForm from './components/auth/RegisterForm';
+import Downloads from './pages/Downloads';  //i have added this line
+import InternalChat from './pages/InternalChat';
+import Settings from './pages/Settings';
+import DownloadPolicyActivity from './pages/DownloadPolicyActivity';
 
 function PrivateRoute({ children }) {
   const { user, loading, authError } = useAuth();
@@ -77,15 +78,15 @@ function App() {
           <Route path="campaigns" element={<Campaigns />} />
           <Route path="calendar" element={<ContentCalendar />} />
           <Route path="contacts" element={<Contacts />} />
+          <Route path="documents" element={<Documents />} />
           <Route path="surveys" element={<Surveys />} />
           <Route path="texting" element={<Texting />} />
           <Route path="notes" element={<NotesActions />} />
           <Route path="automations" element={<Automations />} />
-          <Route path="reporting" element={<Reporting />} />
-         
-          <Route path="attachments" element={<Attachments />} />
-          <Route path="ivans-uploads" element={<IvansUploadsPage />} />
-          <Route path="*" element={<PageNotFound />} />
+          <Route path="downloads" element={<Downloads />} />
+          <Route path="internal-chat" element={<InternalChat />} />
+          <Route path="settings" element={<Settings />} />
+          <Route path="downloads/policy-activity" element={<DownloadPolicyActivity />} />
         </Route>
       </Routes>
     </AuthProvider>

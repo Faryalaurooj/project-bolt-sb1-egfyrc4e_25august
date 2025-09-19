@@ -28,12 +28,14 @@ import {
   FiArrowUpRight,
   FiArrowDownRight,
   FiMinus,
-  FiExternalLink
+  FiExternalLink,
+  FiMessageSquare
 } from 'react-icons/fi';
 import { MdSms } from 'react-icons/md';
 import cusmanoLogo from '../assets/cusmano-logo.png';
 import AddEventModal from '../components/common/AddEventModal';
 import StickyNote from '../components/dashboard/StickyNote';
+import SendTeamMessageModal from '../components/chat/SendTeamMessageModal';
 import BarChart from '../components/charts/BarChart';
 import LineChart from '../components/charts/LineChart';
 import DoughnutChart from '../components/charts/DoughnutChart';
@@ -42,7 +44,6 @@ import { Bar, Line, Doughnut } from 'react-chartjs-2';
 import { useAuth } from '../context/AuthContext';
 import { useCustomization } from '../context/CustomizationContext';
 import useDashboardKPI from '../hooks/useDashboardKPI'; // KPI Hook
-import { createExactDate, toDateString, debugDate } from '../utils/dateUtils';
 
 function SortableDashboardSection({ id, children, className = "" }) {
   const {
@@ -90,9 +91,6 @@ function CalendarSection({ refreshTrigger }) {
   const [loading, setLoading] = useState(false);
   const [outlookConnected, setOutlookConnected] = useState(false);
   const { user } = useAuth();
-
-  // Use the new date utility function
-  const createLocalDate = createExactDate;
 
   // Color palette for team members
   const colorPalette = [
@@ -208,12 +206,9 @@ function CalendarSection({ refreshTrigger }) {
   };
 
   const getEventsForDate = (date) => {
-    // Use the new date utility to create consistent date string
-    const dateStr = toDateString(date);
-    
+    const dateStr = date.toISOString().split('T')[0];
     const crmEvents = events.filter(event => event.event_date === dateStr);
     const outlookEventsForDate = outlookEvents.filter(event => event.event_date === dateStr);
-    
     return [...crmEvents, ...outlookEventsForDate];
   }; 
 
@@ -258,15 +253,7 @@ function CalendarSection({ refreshTrigger }) {
   };
 
   const onClickDay = (clickedDate) => {
-    debugDate('🔧 Dashboard - Clicked Date', clickedDate);
-    
-    // Create a local date using the utility function
-    const localDate = createLocalDate(clickedDate);
-    debugDate('🔧 Dashboard - Local Date Created', localDate);
-    
-    console.log('🔧 Dashboard - Date String:', toDateString(localDate));
-    
-    setSelectedDateForModal(localDate);
+    setSelectedDateForModal(clickedDate);
     setIsAddEventModalOpen(true);
   };
 
@@ -425,11 +412,8 @@ function CalendarSection({ refreshTrigger }) {
         }}
         date={selectedDateForModal}
         onSave={handleAddEvent}
-        onDeleteEvent={handleDeleteEvent}
         user={user}
         userColors={userColors}
-        getUserName={getUserName}
-        eventsForSelectedDay={selectedDateForModal ? getEventsForDate(selectedDateForModal) : []}
       />
     </div>
   );
@@ -448,9 +432,10 @@ function Dashboard() {
   } catch (e) {
     outlet = {};
   }
-  const { openAddNoteModal, openAddTaskModal, openEmailCampaignModal, openTextCampaignModal, openMakeCallModal } = outlet;
+  const { openAddNoteModal, openAddTaskModal, openEmailCampaignModal, openTextCampaignModal, openMakeCallModal, openSendTeamMessageModal } = outlet;
 
   const [stickyNotes, setStickyNotes] = useState([]);
+  const [isSendTeamMessageModalOpen, setIsSendTeamMessageModalOpen] = useState(false);
   const [stickyNotesLoading, setStickyNotesLoading] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);  // Add refreshTrigger state at the top
   const handleRefresh = () => setRefreshTrigger(prev => prev + 1);
@@ -1128,6 +1113,15 @@ function Dashboard() {
               </div>
               <span className="text-gray-900 dark:text-gray-100 font-medium">Make Call</span>
             </button>
+            <button
+              onClick={openSendTeamMessageModal}
+              className="flex flex-col items-center justify-center p-6 btn-interactive-hover dark:bg-gray-700 dark:border-gray-600 rounded-lg dark:hover:bg-gray-600 group"
+            >
+              <div className="p-3 bg-indigo-100 dark:bg-indigo-900 rounded-full mb-3 group-hover:scale-110 transition-transform">
+                <FiMessageSquare className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+              </div>
+              <span className="text-sm font-medium text-purple-900">Team Chat</span>
+            </button>
           </div>
         </SortableDashboardSection>
       ),
@@ -1239,7 +1233,11 @@ function Dashboard() {
       ),
       calendarSection: (
         <SortableDashboardSection id="calendarSection" key="calendarSection">
-          <CalendarSection refreshTrigger={refreshTrigger} />
+          <CalendarSection 
+            refreshTrigger={refreshTrigger} 
+            isSendTeamMessageModalOpen={isSendTeamMessageModalOpen}
+            setIsSendTeamMessageModalOpen={setIsSendTeamMessageModalOpen}
+          />
         </SortableDashboardSection>
       ),
     };
@@ -1312,8 +1310,8 @@ function Dashboard() {
                 style={{
                   left: `${note.x_position || 0}px`,
                   top: `${note.y_position || 0}px`,
-                  zIndex: 40
                 }}
+                onClick={openSendTeamMessageModal}
               >
                 <StickyNote
                   note={note}
@@ -1325,7 +1323,6 @@ function Dashboard() {
           )}
         </div>
       )}
-
     </div>
   );
 }

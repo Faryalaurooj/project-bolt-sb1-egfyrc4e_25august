@@ -5,6 +5,7 @@ import { CustomizationProvider } from './context/CustomizationContext'
 import ToastContainer from './components/common/ToastContainer'
 import App from './App'
 import './index.css'
+import './bootstrap/gotoAutoAuth'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

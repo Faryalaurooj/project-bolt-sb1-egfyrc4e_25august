@@ -19,6 +19,7 @@ import IvansUploadsPage from './pages/IvansUploadsPage';
 import Attachments from './pages/Attachments';
 import LoginForm from './components/auth/LoginForm';
 import RegisterForm from './components/auth/RegisterForm';
+import GoToAuthCallback from './pages/GoToAuthCallback';
 
 function PrivateRoute({ children }) {
   const { user, loading, authError } = useAuth();
@@ -65,6 +66,8 @@ function App() {
       <Routes>
         <Route path="/login" element={<LoginForm />} /> {/* eslint-disable-line */}
         <Route path="/register" element={<RegisterForm />} />
+        {/* Public callback route for GoTo OAuth */}
+        <Route path="/goto-auth-callback" element={<GoToAuthCallback />} />
         
         <Route path="/" element={
           <PrivateRoute>

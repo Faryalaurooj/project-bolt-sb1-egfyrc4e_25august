@@ -150,13 +150,13 @@ class WebRTCService {
     }
   }
 
-  // Make a direct call using GoTo Connect API via backend
+  // Make a direct call using GoTo Connect API via backend with auto-auth
   async makeDirectCall(phoneNumber, contactName) {
     try {
-      console.log('📞 Making direct GoTo Connect call via backend...');
+      console.log('📞 Making automated GoTo Connect call via backend...');
       
-      // Make API call to our backend for direct GoTo Connect call
-      const response = await fetch('/api/goto-connect/direct-call', {
+      // Use the automated call endpoint that handles OAuth automatically
+      const response = await fetch('/api/goto-connect/auto-call', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -167,14 +167,50 @@ class WebRTCService {
         })
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(`Backend API error: ${response.status} - ${errorData.error || response.statusText}`);
-      }
-
       const result = await response.json();
+
+      if (!response.ok) {
+        if (result.authRequired) {
+          // Handle authorization requirement
+          console.log('🔐 Authorization required for GoTo Connect');
+          
+          // Show user-friendly message and redirect to auth
+          if (result.authUrl) {
+            const userConfirm = confirm(
+              `GoTo Connect authorization is required to make calls. Would you like to authorize now?\n\n` +
+              `This will open a popup window for authentication.`
+            );
+            
+            if (userConfirm) {
+              // Open auth URL in popup
+              const popup = window.open(result.authUrl, 'goto-auth', 'width=600,height=700');
+              
+              return new Promise((resolve, reject) => {
+                const messageHandler = (event) => {
+                  if (event.origin !== window.location.origin) return;
+                  
+                  if (event.data.type === 'goto_auth_success') {
+                    window.removeEventListener('message', messageHandler);
+                    // Retry the call after successful auth
+                    this.makeDirectCall(phoneNumber, contactName).then(resolve).catch(reject);
+                  } else if (event.data.type === 'goto_auth_error') {
+                    window.removeEventListener('message', messageHandler);
+                    reject(new Error('Authorization failed: ' + event.data.error));
+                  }
+                };
+                
+                window.addEventListener('message', messageHandler);
+              });
+            } else {
+              throw new Error('GoTo Connect authorization is required to make calls');
+            }
+          }
+        }
+        
+        throw new Error(`API error: ${response.status} - ${result.error || response.statusText}`);
+      }
       
-      console.log('✅ Direct GoTo Connect call initiated successfully via backend:', result);
+      console.log('✅ Automated GoTo Connect call initiated successfully:', result);
       
       this.isCallActive = true;
       

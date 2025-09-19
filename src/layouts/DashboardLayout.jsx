@@ -8,6 +8,8 @@ import {
 } from 'react-icons/fi';
 
 import EmailCampaignModal from '../components/campaigns/EmailCampaignModal';
+import ChatWindow from '../components/chat/ChatWindow';
+import UserSelectModal from '../components/users/UserSelectModal';
 import SocialMediaModal from '../components/campaigns/SocialMediaModal';
 import TextCampaignModal from '../components/campaigns/TextCampaignModal';
 import AddNoteModal from '../components/campaigns/AddNoteModal';
@@ -31,6 +33,7 @@ const DashboardLayout = () => {
   const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
   const [isSocialModalOpen, setIsSocialModalOpen] = useState(false);
   const [isTextModalOpen, setIsTextModalOpen] = useState(false);
+  const [isUserSelectModalOpen, setIsUserSelectModalOpen] = useState(false);
   const [isAddNoteModalOpen, setIsAddNoteModalOpen] = useState(false);
   const [isNewContactModalOpen, setIsNewContactModalOpen] = useState(false);
   const [isAddPhoneCallModalOpen, setIsAddPhoneCallModalOpen] = useState(false);
@@ -39,6 +42,7 @@ const DashboardLayout = () => {
   const [isCustomizationModalOpen, setIsCustomizationModalOpen] = useState(false);
   const [isUserProfileModalOpen, setIsUserProfileModalOpen] = useState(false);
   const [isMakeCallModalOpen, setIsMakeCallModalOpen] = useState(false);
+  const [chatWindows, setChatWindows] = useState([]);
 
 
   const openEmailCampaignModal = () => {
@@ -54,6 +58,33 @@ const DashboardLayout = () => {
   const openAddNoteModal = () => {
     console.log('🔍 Opening add note modal...');
     setIsAddNoteModalOpen(true);
+  };
+  const openSendTeamMessageModal = () => setIsUserSelectModalOpen(true);
+
+  const openChatWithUser = (user) => {
+    setChatWindows(prev => {
+      // Check if chat window already exists
+      const existingIndex = prev.findIndex(chat => chat.user.id === user.id);
+      if (existingIndex !== -1) {
+        // If exists, maximize it
+        return prev.map((chat, index) => 
+          index === existingIndex ? { ...chat, minimized: false } : chat
+        );
+      }
+      // Add new chat window
+      return [...prev, { user, minimized: false }];
+    });
+  };
+  const toggleChatWindow = (userId) => {
+    setChatWindows(prev => 
+      prev.map(chat => 
+        chat.user.id === userId ? { ...chat, minimized: !chat.minimized } : chat
+      )
+    );
+  };
+
+  const closeChatWindow = (userId) => {
+    setChatWindows(prev => prev.filter(chat => chat.user.id !== userId));
   };
 
   const openAddTaskModal = () => {
@@ -176,7 +207,8 @@ const DashboardLayout = () => {
           openAddTaskModal,
           openEmailCampaignModal,
           openTextCampaignModal,
-          openMakeCallModal
+          openMakeCallModal,
+          openSendTeamMessageModal
         }} />
 
         <div className="fixed top-1/2 right-0 transform -translate-y-1/2 z-50">
@@ -199,6 +231,10 @@ const DashboardLayout = () => {
               <button onClick={() => { setIsTextModalOpen(true); setIsFabExpanded(false); }} className="flex items-center space-x-2 text-gray-800 hover:bg-green-200 hover:text-green-900 rounded w-full px-2 py-1">
                 <FiMessageSquare /><span>Compose Text</span>
               </button>
+              <button onClick={() => { setIsUserSelectModalOpen(true); setIsFabExpanded(false); }} className="flex items-center space-x-2 text-gray-800 hover:bg-green-200 hover:text-green-900 rounded w-full px-2 py-1">
+                <FiUsers /><span>Team Chat</span>
+              </button>
+
               <button onClick={() => { setIsAddPhoneCallModalOpen(true); setIsFabExpanded(false); }} className="flex items-center space-x-2 text-gray-800 hover:bg-green-200 hover:text-green-900 rounded w-full px-2 py-1">
                 <FiPhone /><span>Phone Call</span>
               </button>
@@ -208,6 +244,16 @@ const DashboardLayout = () => {
             </div>
           )}
         </div>
+        {chatWindows.map((chat, index) => (
+          <ChatWindow
+            key={chat.user.id}
+            user={chat.user}
+            minimized={chat.minimized}
+            position={index}
+            onMinimize={() => toggleChatWindow(chat.user.id)}
+            onClose={() => closeChatWindow(chat.user.id)}
+          />
+        ))}
 
         <EmailCampaignModal isOpen={isEmailModalOpen} onClose={() => setIsEmailModalOpen(false)} />
         <SocialMediaModal isOpen={isSocialModalOpen} onClose={() => setIsSocialModalOpen(false)} />
@@ -220,6 +266,12 @@ const DashboardLayout = () => {
         <CustomizationSettingsModal isOpen={isCustomizationModalOpen} onClose={() => setIsCustomizationModalOpen(false)} />
         <UserProfileModal isOpen={isUserProfileModalOpen} onClose={() => setIsUserProfileModalOpen(false)} />
         <MakeCallModal isOpen={isMakeCallModalOpen} onClose={() => setIsMakeCallModalOpen(false)} onCallSaved={triggerRefresh} />
+        <UserSelectModal 
+          isOpen={isUserSelectModalOpen} 
+          onClose={() => setIsUserSelectModalOpen(false)} 
+          onUserSelected={openChatWithUser}
+          placeholder="Search team members to chat with..."
+        />
       </main>
     </div>
   );

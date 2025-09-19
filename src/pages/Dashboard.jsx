@@ -28,7 +28,8 @@ import {
   FiArrowUpRight,
   FiArrowDownRight,
   FiMinus,
-  FiExternalLink
+  FiExternalLink,
+  FiMessageSquare
 } from 'react-icons/fi';
 import { MdSms } from 'react-icons/md';
 import cusmanoLogo from '../assets/cusmano-logo.png';
@@ -448,7 +449,7 @@ function Dashboard() {
   } catch (e) {
     outlet = {};
   }
-  const { openAddNoteModal, openAddTaskModal, openEmailCampaignModal, openTextCampaignModal, openMakeCallModal } = outlet;
+  const { openAddNoteModal, openAddTaskModal, openEmailCampaignModal, openTextCampaignModal, openMakeCallModal ,openSendTeamMessageModal} = outlet;
 
   const [stickyNotes, setStickyNotes] = useState([]);
   const [stickyNotesLoading, setStickyNotesLoading] = useState(false);
@@ -459,7 +460,7 @@ function Dashboard() {
   useEffect(() => {
     console.log('🏠 Dashboard rendered - KPI data:', { kpi, loading, error });
     console.log('🏠 Dashboard context functions:', { openAddNoteModal, openAddTaskModal, openEmailCampaignModal, openTextCampaignModal, openMakeCallModal });
-  }, [kpi, loading, error, openAddNoteModal, openAddTaskModal, openEmailCampaignModal, openTextCampaignModal, openMakeCallModal]);
+  }, [kpi, loading, error, openAddNoteModal, openAddTaskModal, openEmailCampaignModal, openTextCampaignModal, ,openSendTeamMessageModal]);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -1127,6 +1128,15 @@ function Dashboard() {
                 <FiPhoneCall className="w-6 h-6 text-green-600 dark:text-green-400" />
               </div>
               <span className="text-gray-900 dark:text-gray-100 font-medium">Make Call</span>
+            </button>
+            <button
+              onClick={openSendTeamMessageModal}
+              className="flex flex-col items-center justify-center p-6 btn-interactive-hover dark:bg-gray-700 dark:border-gray-600 rounded-lg dark:hover:bg-gray-600 group"
+            >
+              <div className="p-3 bg-indigo-100 dark:bg-indigo-900 rounded-full mb-3 group-hover:scale-110 transition-transform">
+                <FiMessageSquare className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+              </div>
+              <span className="text-sm font-medium text-purple-900">Team Chat</span>
             </button>
           </div>
         </SortableDashboardSection>

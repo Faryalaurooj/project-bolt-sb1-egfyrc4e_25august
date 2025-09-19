@@ -4,6 +4,8 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import DashboardLayout from './layouts/DashboardLayout';
 import Dashboard from './pages/Dashboard';
 import TaskBoards from './pages/TaskBoards';
+import Documents from './pages/Documents';
+import Downloads from './pages/Downloads';
 import Campaigns from './pages/Campaigns';
 import ContentCalendar from './pages/ContentCalendar';
 import Contacts from './pages/Contacts';
@@ -79,9 +81,13 @@ function App() {
           <Route path="contacts" element={<Contacts />} />
           <Route path="surveys" element={<Surveys />} />
           <Route path="texting" element={<Texting />} />
+         
+
           <Route path="notes" element={<NotesActions />} />
           <Route path="automations" element={<Automations />} />
           <Route path="reporting" element={<Reporting />} />
+          <Route path="documents" element={<Documents />} />
+          <Route path="downloads" element={<Downloads />} />
          
           <Route path="attachments" element={<Attachments />} />
           <Route path="ivans-uploads" element={<IvansUploadsPage />} />

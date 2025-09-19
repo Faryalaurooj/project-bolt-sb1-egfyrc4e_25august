@@ -2150,3 +2150,367 @@ export const getTextMagicMessageHistory = async (phoneNumber, userPhoneNumber = 
     throw new Error(error.message);
   }
 };
+
+export const createFormTemplate = async (templateData, file) => {
+  try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError) throw userError;
+    if (!user) throw new Error('No authenticated user found');
+
+    // Upload file to Supabase Storage
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('form-templates')
+      .upload(fileName, file);
+
+    if (uploadError) throw uploadError;
+
+    const { data: { publicUrl } } = supabase.storage
+      .from('form-templates')
+      .getPublicUrl(fileName);
+
+    // Send metadata to backend API
+    const response = await fetch('/api/form-templates', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+      },
+      body: JSON.stringify({
+        name: templateData.name,
+        description: templateData.description,
+        file_url: publicUrl,
+        file_type: file.type,
+        file_size: file.size
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to create form template');
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Error creating form template:', error);
+    throw new Error(error.message);
+  }
+};
+
+export const getFormTemplates = async () => {
+  try {
+    const response = await fetch('/api/form-templates', {
+      headers: {
+        'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+      }
+    });
+    if (!response.ok) {
+      throw new Error('Failed to fetch form templates');
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching form templates:', error);
+    throw new Error(error.message);
+  }
+};
+
+export const deleteFormTemplate = async (id) => {
+  try {
+    const response = await fetch(`/api/form-templates/${id}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+      }
+    });
+    if (!response.ok) {
+      throw new Error('Failed to delete form template');
+    }
+    return true;
+  } catch (error) {
+    console.error('Error deleting form template:', error);
+    throw new Error(error.message);
+  }
+};
+export const createFilledForm = async (formData) => {
+  try {
+    const response = await fetch('/api/filled-forms', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+      },
+      body: JSON.stringify(formData)
+    });
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to create filled form');
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Error creating filled form:', error);
+    throw new Error(error.message);
+  }
+};
+export const sendDocumentForSignature = async (documentUrl, recipientEmail, recipientFirstName, recipientLastName, documentName) => {
+  try {
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) throw sessionError;
+    if (!session) throw new Error('No authenticated session found');
+
+    const response = await fetch('/api/pandadoc/send-document', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`
+      },
+      body: JSON.stringify({
+        document_url: documentUrl,
+        recipient_email: recipientEmail,
+        recipient_first_name: recipientFirstName,
+        recipient_last_name: recipientLastName,
+        document_name: documentName
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to send document for signature.');
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Error sending document for signature:', error);
+    throw new Error(error.message);
+  }
+};
+export const initiatePandaDocEditorSession = async (templateFileUrl, documentName, contactData = null) => {
+  try {
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) throw sessionError;
+    if (!session) throw new Error('No authenticated session found');
+
+    const response = await fetch('/api/pandadoc/editor-session', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`
+      },
+      body: JSON.stringify({
+        template_file_url: templateFileUrl,
+        document_name: documentName,
+        contact_data: contactData
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to initiate PandaDoc editor session.');
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Error initiating PandaDoc editor session:', error);
+    throw new Error(error.message);
+  }
+};
+export const getFilledForms = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('filled_forms')
+      .select(`
+        *,
+        form_templates(name),
+        contacts(first_name, last_name)
+      `)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    return (data || []).map(form => ({
+      ...form,
+      template_name: form.form_templates?.name || 'Unknown Template',
+      contact_name: form.contacts ? `${form.contacts.first_name} ${form.contacts.last_name}` : null
+    }));
+  } catch (error) {
+    console.error('Error fetching filled forms:', error);
+    throw new Error(error.message);
+  }
+};
+
+export const getPolicyDocuments = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('policy_documents')
+      .select('*, contacts(first_name, last_name)')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    // Format the data to include contact names
+    return (data || []).map(doc => ({
+      ...doc,
+      contact_name: doc.contacts ? `${doc.contacts.first_name} ${doc.contacts.last_name}` : null,
+      uploaded_by_name: 'System'
+    }));
+  } catch (error) {
+    console.error('Error fetching policy documents:', error);
+    throw new Error(error.message);
+  }
+};
+export const openExistingDocumentInPandaDoc = async (documentUrl, documentName, contactId = null) => {
+  try {
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) throw sessionError;
+    if (!session) throw new Error('No authenticated session found');
+
+    const response = await fetch('/api/pandadoc/open-existing-document', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`
+      },
+      body: JSON.stringify({
+        document_url: documentUrl,
+        document_name: documentName,
+        contact_id: contactId
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to open document in PandaDoc');
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Error opening document in PandaDoc:', error);
+    throw new Error(error.message);
+  }
+};
+export const runReport = async (reportData) => {
+  try {
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) throw sessionError;
+    if (!session) throw new Error('No authenticated session found');
+
+    const response = await fetch('/api/reports/run', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`
+      },
+      body: JSON.stringify(reportData)
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to run report');
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Error running report:', error);
+    throw new Error(error.message);
+  }
+};
+export const saveReportConfiguration = async (reportData) => {
+  try {
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) throw sessionError;
+    if (!session) throw new Error('No authenticated session found');
+
+    const response = await fetch('/api/reports/save', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`
+      },
+      body: JSON.stringify(reportData)
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to save report configuration');
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Error saving report configuration:', error);
+    throw new Error(error.message);
+  }
+};
+
+export const getReports = async () => {
+  try {
+    const response = await fetch('/api/reports', {
+      headers: {
+        'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+      }
+    });
+    if (!response.ok) {
+      throw new Error('Failed to fetch reports');
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching reports:', error);
+    throw new Error(error.message);
+  }
+};
+export const createReport = async (file) => {
+  try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError) throw userError;
+    if (!user) throw new Error('No authenticated user found');
+
+    // Upload file to Supabase Storage
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('reports-storage')
+      .upload(fileName, file);
+
+    if (uploadError) throw uploadError;
+
+    const { data: { publicUrl } } = supabase.storage
+      .from('reports-storage')
+      .getPublicUrl(fileName);
+
+    // Send metadata to backend API
+    const response = await fetch('/api/reports', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+      },
+      body: JSON.stringify({
+        file_name: file.name,
+        file_url: publicUrl,
+        file_type: file.type,
+        file_size: file.size
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to create report');
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Error creating report:', error);
+    throw new Error(error.message);
+  }
+};
+export const deleteReport = async (id) => {
+  try {
+    const response = await fetch(`/api/reports/${id}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+      }
+    });
+    if (!response.ok) {
+      throw new Error('Failed to delete report');
+    }
+    return true;
+  } catch (error) {
+    console.error('Error deleting report:', error);
+    throw new Error(error.message);
+  }
+};

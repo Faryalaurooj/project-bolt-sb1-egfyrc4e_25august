@@ -81,10 +81,13 @@ const DashboardLayout = () => {
   const navItems = [
     { path: '/', icon: FiHome, label: 'Dashboard' },
     { path: '/taskboards', icon: FiCheckSquare, label: 'Task Boards' },
+  
     { path: '/pipeline', icon: FiDollarSign, label: 'Sales Pipeline' },
     { path: '/contacts', icon: FiUsers, label: 'Contacts' },
   
     { path: '/attachments', icon: FiPaperclip, label: 'Attachments' },
+    { path: '/documents', icon: FiClipboard, label: 'Documents' },
+    { path: '/downloads', icon: FiPieChart, label: 'Downloads' },
     { path: '/texting', icon: FiMessageSquare, label: 'Texting' },
     { path: '/notes', icon: FiActivity, label: 'Notes & Actions' },
   ];

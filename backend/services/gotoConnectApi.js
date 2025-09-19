@@ -8,11 +8,13 @@ class GoToConnectAPI {
     this.clientSecret = '23DTUdbooAMfLEbnpMO8lerm';
     this.tokenURL = 'https://authentication.logmeininc.com/oauth/token';
     // Updated access token with voice admin permissions
-    this.accessToken = 'eyJraWQiOiI2MjAiLCJhbGciOiJSUzUxMiJ9.eyJzYyI6InZvaWNlLWFkbWluLnYxLnJlYWQgY2FsbHMudjIuaW5pdGlhdGUgdm9pY2UtYWRtaW4udjEud3JpdGUgaWRlbnRpdHk6IHdlYnJ0Yy52MS5yZWFkIHdlYnJ0Yy52MS53cml0ZSB1c2Vycy52MS5saW5lcy5yZWFkIiwic3ViIjoiNjAxMzI0MjY3OTE0MzIwMTI5MiIsImF1ZCI6ImZkZTZhYzYzLWJmZmItNGJiOC1iYzVkLTRmMmVlZGJhM2JkMSIsIm9nbiI6InB3ZCIsImxzIjoiZmQyMGUxYWMtNTEyYS00YjBlLTg2MmUtNzg4NGQ0NDY5Yjc0IiwidHlwIjoiYSIsImV4cCI6MTc1ODEyMDIxNiwiaWF0IjoxNzU4MTE2NjE2LCJqdGkiOiI3YzFjYTNhNC1hZDIxLTQxMTUtYTA2Ni1kN2VlNmM3ZTVhZGIifQ.TXsoc54F9_SVRGgvCOA2yjqprVU889u8D8n685VLTvI_HtcaqzCZ1l0YLIxNBW5YBAxxJzrOfQQMuVhBfJyctbKD42pRlS1fh5AMfYWXQ1_s33DF997Fk9dtBHlxuyddFL59h6zNyHgu7rwspF4j76yoEiuTTEpJaIDK-jqUpLG379N8xfGc3gG6bwVd47g7wlUyXFDo3Na7S7D02_zdgQMiXr2a1fr_f39AIwNP_rR9tcEsylnT8sxGmwuyY7-KXsQgnxM_iAdZqUD2NUhAFAfcVx4fxaSfMViUsxHihmDUZAwq6ypOdKS-XpYwBAZmrAjHOiJVZHA4VNCA_E-FJg';
+    this.accessToken = 'eyJraWQiOiI2MjAiLCJhbGciOiJSUzUxMiJ9.eyJzYyI6InZvaWNlLWFkbWluLnYxLnJlYWQgY2FsbHMudjIuaW5pdGlhdGUgdm9pY2UtYWRtaW4udjEud3JpdGUgaWRlbnRpdHk6IHdlYnJ0Yy52MS53cml0ZSB3ZWJydGMudjEucmVhZCB1c2Vycy52MS5saW5lcy5yZWFkIiwic3ViIjoiNjAxMzI0MjY3OTE0MzIwMTI5MiIsImF1ZCI6ImJjNzMxZTRjLTdjZTEtNDg1Zi05NmJjLWNjMWRlZWZlNDliMCIsIm9nbiI6InB3ZCIsImxzIjoiZmQyMGUxYWMtNTEyYS00YjBlLTg2MmUtNzg4NGQ0NDY5Yjc0IiwidHlwIjoiYSIsImV4cCI6MTc1ODI2OTgxNSwiaWF0IjoxNzU4MjY2MjE1LCJqdGkiOiJkMDc4YmFjNC0xMjkwLTQ4YmYtYTNkYS03NTUxNjJjYTQxYTgifQ.gY9b1zDMwkLF95zzfGOf2pJEealxIWLPvB7kWgVZBotHw_kTvwSXwCwttldtuo0kAQwbdlnuigRi4QxRdPg06MLCLeo-0qgE9mooA0_WyTUIA91QY2GTFyh79Q_MiuB7R3BBRkxU6oNkaTFH9neGw1-TUrAIOkBDO4HQ7-Z6ORhpvXJ4eJZWzwB8KGJ8fqrRxn3cN-BTRKpAgPzKsgYcFyWFdCFCrUT3YXEJhbQT7Baq3IExXxNIGwVEPMPdaN_ZBSqpxz6oO2KDsgNN-PAcH5doYFPxlqlrKpTi-FX983scGjIbHpVVDY8f20LkaiZDV_uInFnwj0H1swkF_OQIBQ';
     this.userId = null;
     this.tokenExpiry = null;
     // Default line ID for direct calls
     this.defaultLineId = '836ce9e8-7a2b-4aaa-b61a-932d22aeb9ca';
+    // Cache of discovered lines for current token
+    this._cachedUserLines = null;
   }
 
   // Generate authorization URL for user to get authorization code
@@ -113,6 +115,58 @@ class GoToConnectAPI {
     }
   }
 
+  // Fetch lines available to the authenticated user (requires users.v1.lines.read)
+  async getUserLines() {
+    try {
+      // Return cached if present
+      if (this._cachedUserLines && Array.isArray(this._cachedUserLines)) {
+        return this._cachedUserLines;
+      }
+
+      const token = await this.getAccessToken();
+      // Users API is on api.goto.com
+      // We need a userId for the path
+      const userId = await this.getUserId();
+
+      // Typical path: /users/v1/users/{userId}/lines
+      const url = `${this.baseURL}/users/v1/users/${encodeURIComponent(userId)}/lines`;
+      const response = await axios.get(url, {
+        headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' }
+      });
+
+      const lines = Array.isArray(response.data?.items) ? response.data.items : (response.data || []);
+      this._cachedUserLines = lines;
+      return lines;
+    } catch (error) {
+      console.error('❌ Failed to fetch user lines:', error.response?.data || error.message);
+      return [];
+    }
+  }
+
+  // Pick a reasonable default line that has at least one device assigned
+  async resolveDefaultFrom() {
+    // If a defaultLineId is set, prefer it
+    if (this.defaultLineId) {
+      return { lineId: this.defaultLineId };
+    }
+    const lines = await this.getUserLines();
+    if (!lines.length) return null;
+
+    // Heuristic: prefer a line that has devices and is not a ring group/queue
+    const withDevices = lines.find(l => (l.devices && l.devices.length) || l.deviceCount > 0);
+    if (withDevices?.id) {
+      this.defaultLineId = withDevices.id; // cache for next time
+      return { lineId: withDevices.id };
+    }
+    // Fallback to first line
+    const first = lines[0];
+    if (first?.id) {
+      this.defaultLineId = first.id;
+      return { lineId: first.id };
+    }
+    return null;
+  }
+
   // Get account information
   async getAccountInfo() {
     try {
@@ -168,112 +222,60 @@ class GoToConnectAPI {
     try {
       const token = await this.getAccessToken();
       
-      // Use provided line ID or default
-      const lineId = fromLineId || this.defaultLineId;
-      
-      // Format phone number for dialing
-      let dialString = phoneNumber;
-      
-      // If number doesn't start with +, add country code
-      if (!phoneNumber.startsWith('+')) {
-        // Check if it's a Pakistani number (starts with 03)
-        if (phoneNumber.startsWith('03')) {
-          // Pakistani number: 03175970284 -> +923175970284
-          dialString = `+92${phoneNumber.substring(1)}`;
-        } else if (phoneNumber.startsWith('1') && phoneNumber.length === 10) {
-          // US number: 1234567890 -> +11234567890
-          dialString = `+1${phoneNumber}`;
+      // Build `from` object: allow passing an object (e.g., { lineId } or { phoneNumberId })
+      let from = null;
+      if (fromLineId && typeof fromLineId === 'object') {
+        // Use as-is but whitelist expected keys
+        const { lineId, phoneNumberId, deviceId } = fromLineId;
+        from = {};
+        if (lineId) from.lineId = lineId;
+        if (phoneNumberId) from.phoneNumberId = phoneNumberId;
+        if (deviceId) from.deviceId = deviceId;
+      } else {
+        // Use provided line ID string; otherwise resolve dynamically
+        if (typeof fromLineId === 'string' && fromLineId.trim()) {
+          from = { lineId: fromLineId };
         } else {
-          // Default: assume it needs +1 (US)
-          dialString = `+1${phoneNumber.replace(/\D/g, '')}`;
+          from = await this.resolveDefaultFrom();
+          if (!from?.lineId) {
+            throw new Error('No usable line found for the authenticated user. Please authenticate a user with at least one assigned device/line.');
+          }
+        }
+      }
+      
+      // Format phone number: simple E.164-like normalization
+      let dialString = `${phoneNumber}`.trim();
+      dialString = dialString.replace(/[^\d+]/g, '');
+      if (!dialString.startsWith('+')) {
+        // Heuristics: Pakistan numbers starting with 03 -> +92
+        if (/^03\d{9}$/.test(dialString)) {
+          dialString = `+92${dialString.substring(1)}`;
+        } else if (/^\d{10}$/.test(dialString)) {
+          // 10-digit -> assume US
+          dialString = `+1${dialString}`;
+        } else if (/^\d{11,15}$/.test(dialString)) {
+          // If already country code without +, add +
+          dialString = `+${dialString}`;
+        } else {
+          throw new Error(`Invalid phone number format: ${phoneNumber}`);
         }
       }
 
       console.log(`📞 Making direct GoTo Connect call to ${contactName} (${dialString})`);
-      console.log(`📱 Using line ID: ${lineId}`);
+  if (from.lineId) console.log(`📱 Using line ID: ${from.lineId}`);
+  if (from.phoneNumberId) console.log(`📞 Using phoneNumberId: ${from.phoneNumberId}`);
 
-      // GoTo Connect v2 API call format as specified
+      // GoTo Connect Calls v2 API call format as specified in official docs
       const callData = {
         dialString: dialString,
-        from: {
-          lineId: lineId
-        },
+        from,
         autoAnswer: true
       };
 
       console.log('📞 Direct call data:', callData);
 
-       const response = await axios.post(`${this.baseURL}/calls/v2/initiate`, callData, {
-         headers: {
-           'Authorization': `Bearer ${token}`,
-           'Content-Type': 'application/json',
-           'Accept': 'application/json'
-         }
-       });
-
-      console.log('✅ Direct GoTo Connect call initiated successfully:', response.data);
-
-      return {
-        success: true,
-        data: response.data,
-        callId: response.data.callId || response.data.id,
-        message: `Direct call initiated to ${contactName} (${dialString})`
-      };
-    } catch (error) {
-      console.error('❌ Failed to initiate direct GoTo Connect call:', error.response?.data || error.message);
-      return {
-        success: false,
-        error: error.response?.data?.error_description || error.message,
-        details: error.response?.data
-      };
-    }
-  }
-
-  // Initiate a call using GoTo Connect API with user ID from identity API
-  async initiateCall(phoneNumber, contactName, fromLineId = null) {
-    try {
-      const token = await this.getAccessToken();
-      
-      // Get user ID from identity API first
-      const userId = await this.getUserId();
-      
-      // Format phone number for dialing (ensure it's in correct format)
-      let dialString = phoneNumber;
-      
-      // If number doesn't start with +, add country code
-      if (!phoneNumber.startsWith('+')) {
-        // Check if it's a Pakistani number (starts with 03)
-        if (phoneNumber.startsWith('03')) {
-          // Pakistani number: 03175970284 -> +923175970284
-          dialString = `+92${phoneNumber.substring(1)}`;
-        } else if (phoneNumber.startsWith('1') && phoneNumber.length === 10) {
-          // US number: 1234567890 -> +11234567890
-          dialString = `+1${phoneNumber}`;
-        } else {
-          // Default: assume it needs +1 (US)
-          dialString = `+1${phoneNumber.replace(/\D/g, '')}`;
-        }
-      }
-
-      console.log(`📞 Initiating GoTo Connect call to ${contactName} (${dialString})`);
-      console.log(`👤 Using user ID: ${userId}`);
-
-      // GoTo Connect v1 API call for initiating calls
-      const callData = {
-        from: {
-          type: "user",
-          id: userId // Use actual user ID from identity API
-        },
-        to: {
-          type: "phoneNumber",
-          id: dialString
-        },
-        context: "outbound"
-      };
-
-      console.log('📞 Call data:', callData);
-
-      const response = await axios.post(`${this.baseURL}/connect/v1/calls`, callData, {
+      // Correct endpoint: POST https://api.goto.com/calls/v2/calls
+      const response = await axios.post(`${this.baseURL}/calls/v2/calls`, callData, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -281,22 +283,30 @@ class GoToConnectAPI {
         }
       });
 
-      console.log('✅ GoTo Connect call initiated successfully:', response.data);
+      console.log('✅ Direct GoTo Connect call initiated (queued). InitiatorId:', response.data?.initiatorId);
 
       return {
         success: true,
         data: response.data,
-        callId: response.data.callId || response.data.id,
-        message: `Call initiated to ${contactName} (${dialString})`
+        callId: response.data.callId || response.data.id || response.data.initiatorId,
+        message: `Direct call initiated to ${contactName} (${dialString})`
       };
     } catch (error) {
-      console.error('❌ Failed to initiate GoTo Connect call:', error.response?.data || error.message);
+      const status = error.response?.status;
+      const data = error.response?.data;
+      console.error(`❌ Failed to initiate direct GoTo Connect call (status ${status || 'unknown'}):`, data || error.message);
       return {
         success: false,
-        error: error.response?.data?.error_description || error.message,
-        details: error.response?.data
+        error: data?.error_description || data?.message || error.message,
+        details: data
       };
     }
+  }
+
+  // Initiate a call using GoTo Connect API with user ID from identity API
+  async initiateCall(phoneNumber, contactName, fromLineId = null) {
+    // Reuse the same Calls v2 implementation to avoid divergence
+    return this.makeDirectCall(phoneNumber, contactName, fromLineId);
   }
 
   // Get call status

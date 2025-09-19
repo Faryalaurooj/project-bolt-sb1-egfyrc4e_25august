@@ -1,5 +1,5 @@
 import express from 'express';
-import { db } from '../db.js';
+import { supabase } from '../lib/supabase.js';
 
 const router = express.Router();
 
@@ -7,21 +7,38 @@ const router = express.Router();
 router.get('/', async (req, res) => {
   try {
     // Fetch basic counts from database
-    const [contactsCount] = await db('contacts').count('id as count');
-    const [textsCount] = await db('phone_calls').count('id as count');
-    const [emailsCount] = await db('notes').count('id as count');
-    const [textCampaignsCount] = await db('text_campaigns').count('id as count');
-    const [emailTemplatesCount] = await db('email_templates').count('id as count');
-    const [policiesCount] = await db('policy_documents').count('id as count');
+    const { count: contactsCount } = await supabase
+      .from('contacts')
+      .select('*', { count: 'exact', head: true });
+    
+    const { count: textsCount } = await supabase
+      .from('phone_calls')
+      .select('*', { count: 'exact', head: true });
+    
+    const { count: emailsCount } = await supabase
+      .from('notes')
+      .select('*', { count: 'exact', head: true });
+    
+    const { count: textCampaignsCount } = await supabase
+      .from('text_campaigns')
+      .select('*', { count: 'exact', head: true });
+    
+    const { count: emailTemplatesCount } = await supabase
+      .from('email_templates')
+      .select('*', { count: 'exact', head: true });
+    
+    const { count: policiesCount } = await supabase
+      .from('policy_documents')
+      .select('*', { count: 'exact', head: true });
     
     // Parse counts (handle null values)
-    const totalContacts = parseInt(contactsCount.count) || 0;
-    const textsSent = parseInt(textsCount.count) || 0;
-    const callsMade = parseInt(textsCount.count) || 0; // Using phone_calls for calls made
-    const emailsSent = parseInt(emailsCount.count) || 0;
-    const totalTextCampaigns = parseInt(textCampaignsCount.count) || 0;
-    const totalEmailTemplates = parseInt(emailTemplatesCount.count) || 0;
-    const newPolicies = parseInt(policiesCount.count) || 0;
+    const totalContacts = contactsCount || 0;
+    const textsSent = textsCount || 0;
+    const callsMade = textsCount || 0; // Using phone_calls for calls made
+    const emailsSent = emailsCount || 0;
+    const totalTextCampaigns = textCampaignsCount || 0;
+    const totalEmailTemplates = emailTemplatesCount || 0;
+    const newPolicies = policiesCount || 0;
     
     // Calculate derived metrics
     const totalCampaigns = totalTextCampaigns + totalEmailTemplates;

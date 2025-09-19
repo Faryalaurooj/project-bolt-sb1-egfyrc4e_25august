@@ -1,5 +1,5 @@
 import express from 'express';
-import { db } from '../db.js';
+import { supabase } from '../lib/supabase.js';
 
 const router = express.Router();
 
@@ -16,11 +16,17 @@ router.get('/', async (req, res) => {
     
     console.log('📝 getEmailDrafts: Fetching drafts for user:', userId);
     
-    const drafts = await db('emails')
+    const { data: drafts, error } = await supabase
+      .from('emails')
       .select('*')
-      .where('created_by', userId)
-      .where('status', 'draft')
-      .orderBy('updated_at', 'desc');
+      .eq('created_by', userId)
+      .eq('status', 'draft')
+      .order('updated_at', { ascending: false });
+
+    if (error) {
+      console.error('❌ Error in getEmailDrafts:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
 
     console.log('📝 getEmailDrafts: Retrieved drafts:', drafts?.length || 0);
     res.json(drafts || []);
@@ -62,9 +68,16 @@ router.post('/', async (req, res) => {
 
     console.log('📝 saveEmailDraft: Saving draft with data:', transformedData);
 
-    const [draft] = await db('emails')
+    const { data: draft, error } = await supabase
+      .from('emails')
       .insert(transformedData)
-      .returning('*');
+      .select()
+      .single();
+
+    if (error) {
+      console.error('❌ Error in saveEmailDraft:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
 
     console.log('📝 saveEmailDraft: Draft saved successfully:', draft);
     res.json(draft);
@@ -102,12 +115,19 @@ router.put('/:id', async (req, res) => {
 
     console.log('📝 updateEmailDraft: Updating draft with data:', transformedData);
 
-    const [draft] = await db('emails')
-      .where('id', draftId)
-      .where('created_by', userId)
-      .where('status', 'draft')
+    const { data: draft, error } = await supabase
+      .from('emails')
       .update(transformedData)
-      .returning('*');
+      .eq('id', draftId)
+      .eq('created_by', userId)
+      .eq('status', 'draft')
+      .select()
+      .single();
+
+    if (error) {
+      console.error('❌ Error in updateEmailDraft:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
 
     if (!draft) {
       return res.status(404).json({ error: 'Draft not found' });
@@ -136,14 +156,16 @@ router.delete('/:id', async (req, res) => {
 
     console.log('📝 deleteEmailDraft: Deleting draft:', draftId, 'for user:', userId);
 
-    const deletedCount = await db('emails')
-      .where('id', draftId)
-      .where('created_by', userId)
-      .where('status', 'draft')
-      .del();
+    const { error } = await supabase
+      .from('emails')
+      .delete()
+      .eq('id', draftId)
+      .eq('created_by', userId)
+      .eq('status', 'draft');
 
-    if (deletedCount === 0) {
-      return res.status(404).json({ error: 'Draft not found' });
+    if (error) {
+      console.error('❌ Error in deleteEmailDraft:', error);
+      return res.status(500).json({ error: 'Internal server error' });
     }
 
     console.log('📝 deleteEmailDraft: Draft deleted successfully');

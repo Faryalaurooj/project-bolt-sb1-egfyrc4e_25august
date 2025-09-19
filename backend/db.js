@@ -1,7 +1,4 @@
-import knex from 'knex';
-import knexfile from './knexfile.js';
+import { supabase } from './lib/supabase.js';
 
-const environment = process.env.NODE_ENV || 'development';
-const config = knexfile[environment];
-
-export const db = knex(config);
+// Use Supabase client instead of direct database connection
+export const db = supabase;

@@ -1,6 +1,6 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
-import { db } from '../db.js';
+import { supabase } from '../lib/supabase.js';
 
 const router = express.Router();
 
@@ -8,9 +8,17 @@ const router = express.Router();
 router.get('/contact/:contactId', authenticateToken, async (req, res) => {
   try {
     const { contactId } = req.params;
-    const messages = await db('text_messages')
-      .where('contact_id', contactId)
-      .orderBy('created_at', 'asc'); // Order by creation time for chat history
+    const { data: messages, error } = await supabase
+      .from('text_messages')
+      .select('*')
+      .eq('contact_id', contactId)
+      .order('created_at', { ascending: true }); // Order by creation time for chat history
+    
+    if (error) {
+      console.error('Error fetching messages for contact:', error);
+      return res.status(500).json({ error: 'Failed to fetch messages' });
+    }
+    
     res.json(messages);
   } catch (error) {
     console.error('Error fetching messages for contact:', error);
@@ -24,14 +32,17 @@ router.get('/user/:userId', authenticateToken, async (req, res) => {
     const { userId } = req.params;
     const currentUserId = req.user.userId; // Authenticated user's ID
 
-    const messages = await db('text_messages')
-      .where(function() {
-        this.where('sender_id', currentUserId).andWhere('recipient_id', userId);
-      })
-      .orWhere(function() {
-        this.where('sender_id', userId).andWhere('recipient_id', currentUserId);
-      })
-      .orderBy('created_at', 'asc'); // Order by creation time for chat history
+    const { data: messages, error } = await supabase
+      .from('text_messages')
+      .select('*')
+      .or(`and(sender_id.eq.${currentUserId},recipient_id.eq.${userId}),and(sender_id.eq.${userId},recipient_id.eq.${currentUserId})`)
+      .order('created_at', { ascending: true }); // Order by creation time for chat history
+    
+    if (error) {
+      console.error('Error fetching messages for user conversation:', error);
+      return res.status(500).json({ error: 'Failed to fetch messages' });
+    }
+    
     res.json(messages);
   } catch (error) {
     console.error('Error fetching messages for user conversation:', error);
@@ -44,18 +55,19 @@ router.get('/', authenticateToken, async (req, res) => {
   try {
     const currentUserId = req.user.userId;
     
-    const messages = await db('text_messages')
-      .leftJoin('contacts', 'text_messages.contact_id', 'contacts.id')
-      .select(
-        'text_messages.*',
-        'contacts.first_name',
-        'contacts.last_name',
-        'contacts.email',
-        'contacts.phone'
-      )
-      .where('text_messages.sender_id', currentUserId)
-      .orWhere('text_messages.recipient_id', currentUserId)
-      .orderBy('text_messages.created_at', 'desc');
+    const { data: messages, error } = await supabase
+      .from('text_messages')
+      .select(`
+        *,
+        contacts(first_name, last_name, email, phone)
+      `)
+      .or(`sender_id.eq.${currentUserId},recipient_id.eq.${currentUserId}`)
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('Error fetching all messages:', error);
+      return res.status(500).json({ error: 'Failed to fetch messages' });
+    }
     
     res.json(messages);
   } catch (error) {
@@ -89,15 +101,21 @@ router.post('/', authenticateToken, async (req, res) => {
       content: content,
       direction: direction || 'outgoing',
       status: status || 'pending',
-      sent_at: sent_at || db.fn.now(),
+      sent_at: sent_at || new Date().toISOString(),
       media_url: media_url || null,
       textmagic_id: textmagic_id || null,
-      created_at: db.fn.now(),
     };
 
-    const [message] = await db('text_messages')
+    const { data: message, error } = await supabase
+      .from('text_messages')
       .insert(newMessage)
-      .returning('*');
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error creating message:', error);
+      return res.status(500).json({ error: 'Failed to create message' });
+    }
 
     res.status(201).json(message);
   } catch (error) {
@@ -112,14 +130,21 @@ router.put('/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const updates = req.body;
 
-    const [message] = await db('text_messages')
-      .where('id', id)
-      .andWhere('sender_id', req.user.userId) // Only allow updating own messages
+    const { data: message, error } = await supabase
+      .from('text_messages')
       .update({
         ...updates,
-        updated_at: db.fn.now()
+        updated_at: new Date().toISOString()
       })
-      .returning('*');
+      .eq('id', id)
+      .eq('sender_id', req.user.userId) // Only allow updating own messages
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating message:', error);
+      return res.status(500).json({ error: 'Failed to update message' });
+    }
 
     if (!message) {
       return res.status(404).json({ error: 'Message not found or unauthorized' });
@@ -137,13 +162,15 @@ router.delete('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
 
-    const count = await db('text_messages')
-      .where('id', id)
-      .andWhere('sender_id', req.user.userId) // Only allow deleting own messages
-      .del();
+    const { error } = await supabase
+      .from('text_messages')
+      .delete()
+      .eq('id', id)
+      .eq('sender_id', req.user.userId); // Only allow deleting own messages
 
-    if (count === 0) {
-      return res.status(404).json({ error: 'Message not found or unauthorized' });
+    if (error) {
+      console.error('Error deleting message:', error);
+      return res.status(500).json({ error: 'Failed to delete message' });
     }
 
     res.status(204).send();

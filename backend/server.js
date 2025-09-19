@@ -1,7 +1,6 @@
 import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
-import { db } from './db.js';
 import authRoutes from './routes/auth.js';
 import notesRoutes from './routes/notes.js';
 import phoneCallsRoutes from './routes/phone-calls.js';

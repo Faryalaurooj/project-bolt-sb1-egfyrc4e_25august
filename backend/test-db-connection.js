@@ -8,11 +8,16 @@ const environment = process.env.NODE_ENV || 'development';
 const config = knexfile[environment];
 console.log("process.env.DB_PASSWORD", process.env.DB_PASSWORD);
 
-const dbConfig = {
+const dbConfig = config.connection.connectionString ? {
+  connectionString: config.connection.connectionString,
+  ssl: {
+    rejectUnauthorized: false // Required for Supabase connections
+  }
+} : {
   host: config.connection.host,
   port: config.connection.port,
   user: config.connection.user,
-  password: process.env.DB_PASSWORD, // Get password from .env
+  password: process.env.DB_PASSWORD || config.connection.password,
   database: config.connection.database,
   ssl: {
     rejectUnauthorized: false // Required for Supabase connections

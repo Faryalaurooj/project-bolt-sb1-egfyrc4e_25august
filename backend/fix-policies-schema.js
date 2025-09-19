@@ -1,120 +1,98 @@
-import { db } from './db.js';
+import { supabase } from './lib/supabase.js';
 
 /**
- * Script to fix the policies table schema to match Supabase
- * This will add missing columns and ensure proper data types
+ * Script to check the policies table schema in Supabase
+ * Note: Schema changes should be done through Supabase migrations, not this script
+ * This script only checks the current state and provides information
  */
 
-async function fixPoliciesSchema() {
+async function checkPoliciesSchema() {
   try {
-    console.log('🔧 Fixing policies table schema...');
+    console.log('🔧 Checking policies table schema...');
 
-    // Check if the table exists and get its current structure
-    const tableExists = await db.schema.hasTable('policies');
-    if (!tableExists) {
-      console.log('❌ Policies table does not exist. Please run migrations first.');
+    // Check if we can access the policies table
+    const { data: sampleData, error: sampleError } = await supabase
+      .from('policies')
+      .select('*')
+      .limit(1);
+
+    if (sampleError) {
+      console.log('❌ Error accessing policies table:', sampleError.message);
       return;
     }
 
-    // Get current columns
-    const columns = await db('policies').columnInfo();
-    console.log('📋 Current columns:', Object.keys(columns));
+    console.log('✅ Policies table is accessible');
 
-    // Check if we need to add missing columns
-    const requiredColumns = [
-      'policy_type',
-      'effective_date', 
-      'expiration_date',
-      'pfm_level',
-      'policy_forms',
-      'raw_data'
-    ];
-
-    const missingColumns = requiredColumns.filter(col => !columns[col]);
-    
-    if (missingColumns.length > 0) {
-      console.log('🔧 Adding missing columns:', missingColumns);
+    // Get a sample record to see the current structure
+    if (sampleData && sampleData.length > 0) {
+      const sampleRecord = sampleData[0];
+      console.log('📋 Current columns in policies table:');
+      console.log(Object.keys(sampleRecord));
       
-      // Add missing columns one by one
-      for (const column of missingColumns) {
-        try {
-          switch (column) {
-            case 'policy_type':
-              await db.schema.alterTable('policies', table => {
-                table.text('policy_type');
-              });
-              break;
-            case 'effective_date':
-              await db.schema.alterTable('policies', table => {
-                table.date('effective_date');
-              });
-              break;
-            case 'expiration_date':
-              await db.schema.alterTable('policies', table => {
-                table.date('expiration_date');
-              });
-              break;
-            case 'pfm_level':
-              await db.schema.alterTable('policies', table => {
-                table.text('pfm_level');
-              });
-              break;
-            case 'policy_forms':
-              await db.schema.alterTable('policies', table => {
-                table.text('policy_forms');
-              });
-              break;
-            case 'raw_data':
-              await db.schema.alterTable('policies', table => {
-                table.jsonb('raw_data');
-              });
-              break;
-          }
-          console.log(`   ✅ Added column: ${column}`);
-        } catch (error) {
-          console.log(`   ⚠️  Column ${column} might already exist:`, error.message);
-        }
+      // Check for required columns
+      const requiredColumns = [
+        'policy_type',
+        'effective_date', 
+        'expiration_date',
+        'pfm_level',
+        'policy_forms',
+        'raw_data'
+      ];
+
+      const missingColumns = requiredColumns.filter(col => !(col in sampleRecord));
+      
+      if (missingColumns.length > 0) {
+        console.log('⚠️  Missing columns:', missingColumns);
+        console.log('   These should be added through Supabase migrations');
+      } else {
+        console.log('✅ All required columns are present');
       }
+
+      // Check for old columns that might need to be migrated
+      const oldColumns = [
+        'policy_entry',
+        'product', 
+        'payment_plan',
+        'payment_due_day',
+        'eff_date',
+        'exp_date',
+        'source',
+        'sub_source',
+        'policy_agent_of_record',
+        'policy_csr',
+        'prior_policy_number',
+        'memo',
+        'commission_split'
+      ];
+
+      const presentOldColumns = oldColumns.filter(col => col in sampleRecord);
+      
+      if (presentOldColumns.length > 0) {
+        console.log('📋 Old columns present (consider migrating to raw_data):', presentOldColumns);
+      }
+
     } else {
-      console.log('✅ All required columns already exist');
+      console.log('📋 No data in policies table to analyze schema');
     }
 
-    // Check if we need to remove old columns that don't match Supabase schema
-    const oldColumns = [
-      'policy_entry',
-      'product', 
-      'payment_plan',
-      'policy_number', // This should stay
-      'premium', // This should stay
-      'payment_due_day',
-      'eff_date',
-      'exp_date',
-      'source',
-      'sub_source',
-      'policy_agent_of_record',
-      'policy_csr',
-      'prior_policy_number',
-      'memo',
-      'commission_split'
-    ];
+    // Get count of records
+    const { count, error: countError } = await supabase
+      .from('policies')
+      .select('*', { count: 'exact', head: true });
 
-    const columnsToRemove = oldColumns.filter(col => columns[col]);
-    
-    if (columnsToRemove.length > 0) {
-      console.log('⚠️  Found old columns that should be moved to raw_data:', columnsToRemove);
-      console.log('   These will be preserved in raw_data field instead of being deleted');
+    if (countError) {
+      console.log('❌ Error getting record count:', countError.message);
+    } else {
+      console.log(`📊 Total policies in table: ${count}`);
     }
 
-    // Final verification
-    const finalColumns = await db('policies').columnInfo();
-    console.log('✅ Final schema columns:', Object.keys(finalColumns));
+    console.log('✅ Schema check complete');
+    console.log('💡 Note: Schema changes should be made through Supabase migrations, not this script');
 
   } catch (error) {
-    console.error('❌ Error fixing schema:', error);
-  } finally {
-    await db.destroy();
+    console.error('❌ Error checking schema:', error);
   }
 }
 
-// Run the schema fix
-fixPoliciesSchema();
+// Run the schema check
+checkPoliciesSchema();

@@ -1,6 +1,6 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
-import { db } from '../db.js';
+import { supabase } from '../lib/supabase.js';
 import fetch from 'node-fetch';
 import dotenv from 'dotenv';
 
@@ -11,9 +11,17 @@ const router = express.Router();
 // Get all phone calls for a contact
 router.get('/contact/:contactId', authenticateToken, async (req, res) => {
   try {
-    const calls = await db('phone_calls')
-      .where('contact_id', req.params.contactId)
-      .orderBy('created_at', 'desc');
+    const { data: calls, error } = await supabase
+      .from('phone_calls')
+      .select('*')
+      .eq('contact_id', req.params.contactId)
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('Error fetching phone calls:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+    
     res.json(calls);
   } catch (error) {
     console.error('Error fetching phone calls:', error);
@@ -24,12 +32,20 @@ router.get('/contact/:contactId', authenticateToken, async (req, res) => {
 // Create a new phone call
 router.post('/', authenticateToken, async (req, res) => {
   try {
-    const [call] = await db('phone_calls')
+    const { data: call, error } = await supabase
+      .from('phone_calls')
       .insert({
         ...req.body,
         created_by: req.user.userId
       })
-      .returning('*');
+      .select()
+      .single();
+    
+    if (error) {
+      console.error('Error creating phone call:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+    
     res.status(201).json(call);
   } catch (error) {
     console.error('Error creating phone call:', error);
@@ -40,13 +56,20 @@ router.post('/', authenticateToken, async (req, res) => {
 // Update a phone call
 router.put('/:id', authenticateToken, async (req, res) => {
   try {
-    const [call] = await db('phone_calls')
-      .where('id', req.params.id)
+    const { data: call, error } = await supabase
+      .from('phone_calls')
       .update({
         ...req.body,
-        updated_at: new Date()
+        updated_at: new Date().toISOString()
       })
-      .returning('*');
+      .eq('id', req.params.id)
+      .select()
+      .single();
+    
+    if (error) {
+      console.error('Error updating phone call:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
     
     if (!call) {
       return res.status(404).json({ error: 'Phone call not found' });
@@ -62,12 +85,14 @@ router.put('/:id', authenticateToken, async (req, res) => {
 // Delete a phone call
 router.delete('/:id', authenticateToken, async (req, res) => {
   try {
-    const count = await db('phone_calls')
-      .where('id', req.params.id)
-      .del();
+    const { error } = await supabase
+      .from('phone_calls')
+      .delete()
+      .eq('id', req.params.id);
     
-    if (count === 0) {
-      return res.status(404).json({ error: 'Phone call not found' });
+    if (error) {
+      console.error('Error deleting phone call:', error);
+      return res.status(500).json({ error: 'Internal server error' });
     }
     
     res.status(204).send();

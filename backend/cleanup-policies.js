@@ -1,4 +1,4 @@
-import { db } from './db.js';
+import { supabase } from './lib/supabase.js';
 
 /**
  * Cleanup script to fix NULL values in policies table
@@ -13,45 +13,77 @@ async function cleanupPolicies() {
     console.log('🧹 Starting policies cleanup...');
 
     // 1. First, let's see what we have
-    const allPolicies = await db('policies').select('*');
+    const { data: allPolicies, error: allPoliciesError } = await supabase
+      .from('policies')
+      .select('*');
+    
+    if (allPoliciesError) {
+      console.error('❌ Error fetching policies:', allPoliciesError);
+      return;
+    }
+    
     console.log(`📊 Found ${allPolicies.length} policies in database`);
 
     // 2. Find and remove duplicates based on policy_number and contact_id
     console.log('🔍 Looking for duplicate policies...');
-    const duplicates = await db('policies')
-      .select('policy_number', 'contact_id')
-      .whereNotNull('policy_number')
-      .groupBy('policy_number', 'contact_id')
-      .havingRaw('count(*) > 1');
+    
+    // Get all policies with policy_number and contact_id
+    const { data: policiesWithNumbers, error: policiesError } = await supabase
+      .from('policies')
+      .select('id, policy_number, contact_id, created_at')
+      .not('policy_number', 'is', null);
+    
+    if (policiesError) {
+      console.error('❌ Error fetching policies with numbers:', policiesError);
+      return;
+    }
 
+    // Group by policy_number and contact_id to find duplicates
+    const groupedPolicies = {};
+    policiesWithNumbers.forEach(policy => {
+      const key = `${policy.policy_number}-${policy.contact_id}`;
+      if (!groupedPolicies[key]) {
+        groupedPolicies[key] = [];
+      }
+      groupedPolicies[key].push(policy);
+    });
+
+    const duplicates = Object.values(groupedPolicies).filter(group => group.length > 1);
     console.log(`🔄 Found ${duplicates.length} duplicate policy groups`);
 
-    for (const duplicate of duplicates) {
-      console.log(`🗑️  Removing duplicates for policy ${duplicate.policy_number} and contact ${duplicate.contact_id}`);
+    for (const duplicateGroup of duplicates) {
+      console.log(`🗑️  Removing duplicates for policy ${duplicateGroup[0].policy_number} and contact ${duplicateGroup[0].contact_id}`);
       
-      // Keep the most recent one, delete the rest
-      const policiesToDelete = await db('policies')
-        .where('policy_number', duplicate.policy_number)
-        .where('contact_id', duplicate.contact_id)
-        .orderBy('created_at', 'desc')
-        .offset(1); // Skip the first (most recent) one
+      // Sort by created_at (most recent first) and keep the first one
+      const sortedPolicies = duplicateGroup.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      const policiesToDelete = sortedPolicies.slice(1); // Remove all except the first (most recent)
 
       for (const policy of policiesToDelete) {
-        await db('policies').where('id', policy.id).del();
-        console.log(`   ✅ Deleted policy ID: ${policy.id}`);
+        const { error: deleteError } = await supabase
+          .from('policies')
+          .delete()
+          .eq('id', policy.id);
+        
+        if (deleteError) {
+          console.error(`❌ Error deleting policy ${policy.id}:`, deleteError);
+        } else {
+          console.log(`   ✅ Deleted policy ID: ${policy.id}`);
+        }
       }
     }
 
     // 3. Update NULL values from raw_data where possible
     console.log('🔄 Updating NULL values from raw_data...');
-    const policiesWithRawData = await db('policies')
-      .whereNotNull('raw_data')
-      .where(function() {
-        this.whereNull('policy_type')
-            .orWhereNull('policy_entry')
-            .orWhereNull('source')
-            .orWhereNull('policy_agent_of_record');
-      });
+    const { data: policiesWithRawData, error: rawDataError } = await supabase
+      .from('policies')
+      .select('*')
+      .not('raw_data', 'is', null)
+      .or('policy_type.is.null,policy_entry.is.null,source.is.null,policy_agent_of_record.is.null');
+
+    if (rawDataError) {
+      console.error('❌ Error fetching policies with raw data:', rawDataError);
+      return;
+    }
 
     for (const policy of policiesWithRawData) {
       const rawData = policy.raw_data;
@@ -105,45 +137,90 @@ async function cleanupPolicies() {
         }
 
         if (Object.keys(updates).length > 0) {
-          await db('policies')
-            .where('id', policy.id)
-            .update(updates);
-          console.log(`   ✅ Updated policy ID: ${policy.id} with fields:`, Object.keys(updates));
+          const { error: updateError } = await supabase
+            .from('policies')
+            .update(updates)
+            .eq('id', policy.id);
+          
+          if (updateError) {
+            console.error(`❌ Error updating policy ${policy.id}:`, updateError);
+          } else {
+            console.log(`   ✅ Updated policy ID: ${policy.id} with fields:`, Object.keys(updates));
+          }
         }
       }
     }
 
     // 4. Clean up orphaned records (policies without valid contact_id)
     console.log('🧹 Cleaning up orphaned policies...');
-    const orphanedPolicies = await db('policies')
-      .leftJoin('contacts', 'policies.contact_id', 'contacts.id')
-      .whereNull('contacts.id')
-      .select('policies.id');
+    
+    // Get all policies
+    const { data: allPoliciesForCleanup, error: allPoliciesError2 } = await supabase
+      .from('policies')
+      .select('id, contact_id');
+    
+    if (allPoliciesError2) {
+      console.error('❌ Error fetching policies for cleanup:', allPoliciesError2);
+      return;
+    }
+
+    // Get all contact IDs
+    const { data: allContacts, error: contactsError } = await supabase
+      .from('contacts')
+      .select('id');
+    
+    if (contactsError) {
+      console.error('❌ Error fetching contacts:', contactsError);
+      return;
+    }
+
+    const contactIds = new Set(allContacts.map(contact => contact.id));
+    const orphanedPolicies = allPoliciesForCleanup.filter(policy => 
+      policy.contact_id && !contactIds.has(policy.contact_id)
+    );
 
     if (orphanedPolicies.length > 0) {
       console.log(`🗑️  Found ${orphanedPolicies.length} orphaned policies`);
       for (const policy of orphanedPolicies) {
-        await db('policies').where('id', policy.id).del();
-        console.log(`   ✅ Deleted orphaned policy ID: ${policy.id}`);
+        const { error: deleteError } = await supabase
+          .from('policies')
+          .delete()
+          .eq('id', policy.id);
+        
+        if (deleteError) {
+          console.error(`❌ Error deleting orphaned policy ${policy.id}:`, deleteError);
+        } else {
+          console.log(`   ✅ Deleted orphaned policy ID: ${policy.id}`);
+        }
       }
     }
 
     // 5. Final statistics
-    const finalCount = await db('policies').count('* as count').first();
-    console.log(`✅ Cleanup complete! Final policy count: ${finalCount.count}`);
+    const { count: finalCount, error: countError } = await supabase
+      .from('policies')
+      .select('*', { count: 'exact', head: true });
+    
+    if (countError) {
+      console.error('❌ Error getting final count:', countError);
+    } else {
+      console.log(`✅ Cleanup complete! Final policy count: ${finalCount}`);
+    }
 
     // 6. Show sample of cleaned data
-    const samplePolicies = await db('policies')
-      .select('id', 'policy_number', 'policy_type', 'company', 'premium', 'effective_date', 'expiration_date')
+    const { data: samplePolicies, error: sampleError } = await supabase
+      .from('policies')
+      .select('id, policy_number, policy_type, company, premium, effective_date, expiration_date')
       .limit(5);
 
-    console.log('📋 Sample of cleaned policies:');
-    console.table(samplePolicies);
+    if (sampleError) {
+      console.error('❌ Error fetching sample policies:', sampleError);
+    } else {
+      console.log('📋 Sample of cleaned policies:');
+      console.table(samplePolicies);
+    }
 
   } catch (error) {
     console.error('❌ Error during cleanup:', error);
-  } finally {
-    await db.destroy();
   }
 }
 

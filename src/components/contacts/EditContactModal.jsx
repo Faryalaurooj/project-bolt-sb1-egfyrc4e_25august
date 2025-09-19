@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Dialog } from '@headlessui/react';
 import { FiX, FiPlus, FiChevronDown, FiFileText, FiPaperclip, FiUpload, FiDownload, FiTrash2, FiEye, FiEdit3, FiEdit2, FiUser, FiUsers, FiBriefcase } from 'react-icons/fi';
-import { updateContact, createHouseholdMember, createPolicyDocument, getCompanies, createPolicy, getPoliciesByContactIdSupabase } from '../../services/api';
+import { updateContact, createHouseholdMember, createPolicyDocument, getCompanies, createPolicy, updatePolicy, getPoliciesByContactIdSupabase } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 
 function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
@@ -81,6 +81,7 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
     memo: '',
     commissionSplit: '100.00%'
   });
+  const [existingPolicyId, setExistingPolicyId] = useState(null);
   const [dropdownsOpen, setDropdownsOpen] = useState({
     policyEntry: false,
     company: false,
@@ -205,37 +206,9 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
       
       console.log('EditContactModal: Setting new form data:', newFormData);
       setFormData(newFormData);
-      console.log('EditContactModal: Form data populated:', {
-        mailingAddress: contact.mailing_address,
-        mailingCity: contact.mailing_city,
-        mailingState: contact.mailing_state,
-        mailingZip: contact.mailing_zip,
-        customerType: contact.customer_type,
-        accountType: contact.account_type,
-        contactStatus: contact.contact_status,
-        driversLicense: contact.drivers_license,
-        dlState: contact.dl_state,
-        dateLicensed: contact.date_licensed,
-        preferredContactMethod: contact.preferred_contact_method,
-        phone: contact.phone,
-        cell_number: contact.cell_number,
-        home_phone_number: contact.home_phone_number,
-        work_number: contact.work_number,
-        customerSubStatus: contact.customer_sub_status,
-        customerAgentOfRecord: contact.customer_agent_of_record,
-        customerCsr: contact.customer_csr,
-        keyedBy: contact.keyed_by,
-        office: contact.office,
-        source: contact.source
-      });
-      console.log('EditContactModal: Final formData state:', formData);
     }
   }, [contact]);
 
-  // Debug formData changes
-  useEffect(() => {
-    console.log('EditContactModal: formData changed:', formData);
-  }, [formData]);
 
   // Fetch companies and policy data when modal opens
   useEffect(() => {
@@ -252,6 +225,7 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
             if (policies && policies.length > 0) {
               const latestPolicy = policies[0];
               console.log('EditContactModal: Loading policy data:', latestPolicy);
+              setExistingPolicyId(latestPolicy.id);
               setPolicyData({
                 policyEntry: latestPolicy.policy_entry || 'New Business',
                 company: latestPolicy.company || '',
@@ -270,9 +244,12 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
                 memo: latestPolicy.memo || '',
                 commissionSplit: latestPolicy.commission_split || '100.00%'
               });
+            } else {
+              setExistingPolicyId(null);
             }
           } catch (policyError) {
             console.error('Error loading policy data:', policyError);
+            setExistingPolicyId(null);
           }
         } catch (error) {
           console.error('Error fetching data:', error);
@@ -364,19 +341,28 @@ function EditContactModal({ isOpen, onClose, contact, onContactUpdated }) {
         }
       }
 
-      // Create policy if policy number is provided and not empty
+      // Handle policy - update existing or create new
       if (policyData.policyNumber && policyData.policyNumber.trim() !== '') {
         try {
-          console.log('Creating policy for contact:', contact.id);
-          await createPolicy({
-            ...policyData,
-            created_by: user.id,
-            contact_id: contact.id
-          });
-          console.log('Policy created successfully');
+          if (existingPolicyId) {
+            console.log('Updating existing policy:', existingPolicyId);
+            await updatePolicy(existingPolicyId, {
+              ...policyData,
+              contact_id: contact.id
+            });
+            console.log('Policy updated successfully');
+          } else {
+            console.log('Creating new policy for contact:', contact.id);
+            await createPolicy({
+              ...policyData,
+              created_by: user.id,
+              contact_id: contact.id
+            });
+            console.log('Policy created successfully');
+          }
         } catch (policyError) {
-          console.error('Failed to create policy:', policyError);
-          setError(`Failed to create policy: ${policyError.message}`);
+          console.error('Failed to handle policy:', policyError);
+          setError(`Failed to ${existingPolicyId ? 'update' : 'create'} policy: ${policyError.message}`);
           setLoading(false);
           return;
         }

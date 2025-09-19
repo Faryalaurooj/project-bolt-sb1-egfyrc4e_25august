@@ -30,10 +30,10 @@ export default {
   development: {
     client: 'pg',
     connection: {
-      host: 'db.zdcjwzvzfvlumipbbjzp.supabase.co',
+      host: 'zdcjwzvzfvlumipbbjzp.supabase.co',
       port: 5432,
       user: 'postgres',
-      password: "0Ck8HI4u2L4gfzwG",
+      password: '0Ck8HI4u2L4gfzwG',
       database: 'postgres',
       ssl: { rejectUnauthorized: false }   // ✅ required for Supabase
     },

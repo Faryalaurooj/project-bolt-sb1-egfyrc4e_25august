@@ -336,28 +336,10 @@ function Contacts() {
 
   const handleContactUpdated = async (updatedContact) => {
     try {
-      // This would typically call an API to update the contact
-      console.log('✏️ Updating contact:', updatedContact);
+      console.log('✏️ Contact updated in modal, refreshing data...');
       
-      // Update the local state
-      setContacts(prev => prev.map(contact => 
-        contact.id === updatedContact.id ? updatedContact : contact
-      ));
-      
-      // Update household details and policies maps
-      if (updatedContact.householdDetails && Object.keys(updatedContact.householdDetails).length > 0) {
-        setHouseholdDetails(prev => ({
-          ...prev,
-          [updatedContact.id]: updatedContact.householdDetails
-        }));
-      }
-      
-      if (updatedContact.policies && updatedContact.policies.length > 0) {
-        setContactPolicies(prev => ({
-          ...prev,
-          [updatedContact.id]: updatedContact.policies
-        }));
-      }
+      // Refresh the entire contacts list to get the latest data
+      setRefreshTrigger(prev => prev + 1);
       
       showSuccess('Contact updated successfully!');
       setIsEditContactOpen(false);
@@ -583,9 +565,6 @@ function Contacts() {
                           />
                         </th>
                         <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Name</th>
-                        <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Household Details</th>
-                        <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Policies & Documents</th>
-                        <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Tags</th>
                         <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Contact Info</th>
                         <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Creation Date</th>
                         <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Actions</th>
@@ -615,94 +594,6 @@ function Contacts() {
                               >
                                 {contact.firstName} {contact.lastName}
                               </div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="space-y-1">
-                              {householdDetails[contact.id] ? (
-                                <div className="flex items-center space-x-2">
-                                  <FiHome className="w-4 h-4 text-green-600" />
-                                  <div className="text-xs">
-                                    <div className="font-medium text-gray-900">
-                                      {householdDetails[contact.id].address || 'Address Available'}
-                                    </div>
-                                    {householdDetails[contact.id].family_size && (
-                                      <div className="text-gray-500">
-                                        Family: {householdDetails[contact.id].family_size}
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              ) : (
-                                <span className="text-xs text-gray-400 italic">No household details</span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="space-y-1">
-                              {/* Policies */}
-                              {contactPolicies[contact.id] && contactPolicies[contact.id].length > 0 ? (
-                                <div className="flex items-center space-x-2">
-                                  <FiFileText className="w-4 h-4 text-blue-600" />
-                                  <div className="text-xs">
-                                    <div className="font-medium text-gray-900">
-                                      {contactPolicies[contact.id].length} Policy(ies)
-                                    </div>
-                                    <div className="text-gray-500">
-                                      {contactPolicies[contact.id].slice(0, 2).map((policy, index) => (
-                                        <span key={index}>
-                                          {policy.name || policy.type}
-                                          {index < Math.min(contactPolicies[contact.id].length - 1, 1) && ', '}
-                                        </span>
-                                      ))}
-                                      {contactPolicies[contact.id].length > 2 && '...'}
-                                    </div>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="flex items-center space-x-2">
-                                  <FiFileText className="w-4 h-4 text-gray-400" />
-                                  <span className="text-xs text-gray-400 italic">No policies</span>
-                                </div>
-                              )}
-                              
-                              {/* Policy Documents */}
-                              {contact.policyDocuments && contact.policyDocuments.length > 0 ? (
-                                <div className="flex items-center space-x-2 mt-1">
-                                  <FiFileText className="w-4 h-4 text-green-600" />
-                                  <div className="text-xs">
-                                    <div className="font-medium text-gray-900">
-                                      {contact.policyDocuments.length} Document(s)
-                                    </div>
-                                    <div className="text-gray-500">
-                                      {contact.policyDocuments.slice(0, 2).map((doc, index) => (
-                                        <span key={index}>
-                                          {doc.file_name}
-                                          {index < Math.min(contact.policyDocuments.length - 1, 1) && ', '}
-                                        </span>
-                                      ))}
-                                      {contact.policyDocuments.length > 2 && '...'}
-                                    </div>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="flex items-center space-x-2 mt-1">
-                                  <FiFileText className="w-4 h-4 text-gray-400" />
-                                  <span className="text-xs text-gray-400 italic">No documents</span>
-                                </div>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex flex-wrap gap-1">
-                              {contact?.tags?.map((tag, index) => (
-                                <span
-                                  key={index}
-                                  className="px-3 py-1 text-xs font-semibold rounded-full bg-gradient-to-r from-orange-100 to-red-100 text-orange-800 border border-orange-200"
-                                >
-                                  {tag}
-                                </span>
-                              ))}
                             </div>
                           </td>
                           <td className="px-6 py-4">

@@ -1,6 +1,6 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
-import { db } from '../db.js';
+import { supabase } from '../lib/supabase.js';
 
 const router = express.Router();
 
@@ -65,11 +65,17 @@ router.post('/', async (req, res) => {
       created_by: created_by || null
     };
     
-    const [policy] = await db('policies')
+    const { data: policy, error } = await supabase
+      .from('policies')
       .insert(policyData)
-      .returning('*');
+      .select()
+      .single();
 
-   
+    if (error) {
+      console.error('📋 Backend: ❌ Supabase error creating policy:', error);
+      return res.status(500).json({ error: 'Failed to create policy' });
+    }
+
     res.status(201).json(policy);
   } catch (error) {
     console.error('📋 Backend: ❌ Error creating policy:', error);
@@ -80,9 +86,15 @@ router.post('/', async (req, res) => {
 // Get all policies for the authenticated user
 router.get('/',  async (req, res) => {
   try {
-    const policies = await db('policies')
-      
-      .orderBy('created_at', 'desc');
+    const { data: policies, error } = await supabase
+      .from('policies')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('❌ Error fetching policies:', error);
+      return res.status(500).json({ error: 'Failed to fetch policies' });
+    }
 
     res.json(policies);
   } catch (error) {
@@ -94,10 +106,16 @@ router.get('/',  async (req, res) => {
 // Get policies by contact ID
 router.get('/contact/:contactId', authenticateToken, async (req, res) => {
   try {
-    const policies = await db('policies')
-      .where('contact_id', req.params.contactId)
-     
-      .orderBy('created_at', 'desc');
+    const { data: policies, error } = await supabase
+      .from('policies')
+      .select('*')
+      .eq('contact_id', req.params.contactId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('❌ Error fetching policies by contact:', error);
+      return res.status(500).json({ error: 'Failed to fetch policies' });
+    }
 
     res.json(policies);
   } catch (error) {
@@ -109,16 +127,21 @@ router.get('/contact/:contactId', authenticateToken, async (req, res) => {
 // Get a specific policy by ID
 router.get('/:id',  async (req, res) => {
   try {
-    const policy = await db('policies')
-      .where('id', req.params.id)
-    
-      .first();
+    const { data: policies, error } = await supabase
+      .from('policies')
+      .select('*')
+      .eq('id', req.params.id);
 
-    if (!policy) {
+    if (error) {
+      console.error('❌ Error fetching policy:', error);
+      return res.status(500).json({ error: 'Failed to fetch policy' });
+    }
+
+    if (!policies || policies.length === 0) {
       return res.status(404).json({ error: 'Policy not found' });
     }
 
-    res.json(policy);
+    res.json(policies[0]);
   } catch (error) {
     console.error('❌ Error fetching policy:', error);
     res.status(500).json({ error: 'Failed to fetch policy' });
@@ -173,16 +196,22 @@ router.put('/:id',  async (req, res) => {
       updated_at: new Date()
     };
 
-    const [policy] = await db('policies')
-      .where('id', req.params.id)
+    const { data: policies, error } = await supabase
+      .from('policies')
       .update(policyData)
-      .returning('*');
+      .eq('id', req.params.id)
+      .select();
 
-    if (!policy) {
+    if (error) {
+      console.error('❌ Error updating policy:', error);
+      return res.status(500).json({ error: 'Failed to update policy' });
+    }
+
+    if (!policies || policies.length === 0) {
       return res.status(404).json({ error: 'Policy not found' });
     }
 
-    res.json(policy);
+    res.json(policies[0]);
   } catch (error) {
     console.error('❌ Error updating policy:', error);
     res.status(500).json({ error: 'Failed to update policy' });
@@ -192,13 +221,14 @@ router.put('/:id',  async (req, res) => {
 // Delete a policy
 router.delete('/:id', authenticateToken, async (req, res) => {
   try {
-    const count = await db('policies')
-      .where('id', req.params.id)
-      
-      .del();
+    const { error } = await supabase
+      .from('policies')
+      .delete()
+      .eq('id', req.params.id);
 
-    if (count === 0) {
-      return res.status(404).json({ error: 'Policy not found' });
+    if (error) {
+      console.error('❌ Error deleting policy:', error);
+      return res.status(500).json({ error: 'Failed to delete policy' });
     }
 
     res.status(204).send();

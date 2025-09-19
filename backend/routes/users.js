@@ -1,6 +1,6 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
-import { db } from '../db.js';
+import { supabase } from '../lib/supabase.js';
 
 const router = express.Router();
 
@@ -8,9 +8,15 @@ const router = express.Router();
 router.get('/',  async (req, res) => {
   console.log("call__")
   try {
-    const users = await db('users')
-      .select('id', 'email', 'first_name', 'last_name', 'contact_number', 'outlook_email', 'created_at')
-      .orderBy('created_at', 'desc');
+    const { data: users, error } = await supabase
+      .from('users')
+      .select('id, email, first_name, last_name, contact_number, outlook_email, created_at')
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('Error fetching users:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
     
     res.json(users);
   } catch (error) {
@@ -22,10 +28,16 @@ router.get('/',  async (req, res) => {
 // Get current user profile
 router.get('/profile', async (req, res) => {
   try {
-    const user = await db('users')
-      .select('id', 'email', 'first_name', 'last_name', 'contact_number', 'outlook_email', 'created_at')
-      .where('id', req.user.userId)
-      .first();
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('id, email, first_name, last_name, contact_number, outlook_email, created_at')
+      .eq('id', req.user.userId)
+      .single();
+    
+    if (error) {
+      console.error('Error fetching user profile:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
     
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
@@ -43,17 +55,23 @@ router.put('/profile',  async (req, res) => {
   try {
     const { first_name, last_name, contact_number, outlook_email } = req.body; // Include outlook_email
     
-    const [user] = await db('users')
-      .where('id', req.user.userId)
+    const { data: user, error } = await supabase
+      .from('users')
       .update({
         first_name,
         last_name,
         contact_number,
-        outlook_email, // Save outlook_email
         outlook_email,
-        updated_at: new Date()
+        updated_at: new Date().toISOString()
       })
-      .returning(['id', 'email', 'first_name', 'last_name', 'contact_number', 'outlook_email', 'created_at']);
+      .eq('id', req.user.userId)
+      .select('id, email, first_name, last_name, contact_number, outlook_email, created_at')
+      .single();
+    
+    if (error) {
+      console.error('Error updating user profile:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
     
     if (!user) {
       return res.status(404).json({ error: 'User not found' });

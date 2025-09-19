@@ -1,7 +1,7 @@
 import express from 'express';
 import bcryptjs from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { db } from '../db.js';
+import { supabase } from '../lib/supabase.js';
 
 const router = express.Router();
 
@@ -11,7 +11,12 @@ router.post('/register', async (req, res) => {
     const { email, password, firstName, lastName } = req.body;
     
     // Check if user already exists
-    const existingUser = await db('users').where({ email }).first();
+    const { data: existingUser } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', email)
+      .single();
+    
     if (existingUser) {
       return res.status(400).json({ error: 'User already exists' });
     }
@@ -20,14 +25,21 @@ router.post('/register', async (req, res) => {
     const passwordHash = await bcryptjs.hash(password, 10);
 
     // Create user
-    const [user] = await db('users')
+    const { data: user, error } = await supabase
+      .from('users')
       .insert({
         email,
         password_hash: passwordHash,
         first_name: firstName,
         last_name: lastName
       })
-      .returning(['id', 'email', 'first_name', 'last_name', 'role']);
+      .select('id, email, first_name, last_name, role')
+      .single();
+
+    if (error) {
+      console.error('Registration error:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
 
     // Generate JWT
     const token = jwt.sign(
@@ -49,11 +61,13 @@ router.post('/login', async (req, res) => {
     const { email, password } = req.body;
 
     // Find user
-    const user = await db('users')
-      .where({ email })
-      .first();
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email)
+      .single();
 
-    if (!user) {
+    if (userError || !user) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
